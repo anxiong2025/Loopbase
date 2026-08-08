@@ -1,63 +1,127 @@
-# Loopbase — Agent Runtime Kernel
+# Loopbase
 
-## 这是什么
+**The open, provider-neutral, lightweight loop-engineering state kernel for long-running agent teams.**
 
-一个轻量级的、可长时间运行的 agent 循环内核（loop engineering state kernel）。内核本身做扎实、能独立开源，
-旅行规划场景是第一个使用方，不是唯一目标——内核对具体领域一无所知。
+Keep the loop moving. Keep the evidence honest.
 
-## 为什么要做
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.14+-blue)](pyproject.toml)
+[![Dependencies](https://img.shields.io/badge/dependencies-stdlib%20only-brightgreen)](packages/kernel/pyproject.toml)
+[![Status](https://img.shields.io/badge/status-Stage%201-yellow)](ROADMAP.md)
 
-旅行规划这类任务，本质上是长时间运行、中途会被打断、决策要能被审计的：等降价、监控航班变化、多轮重新规划，
-过程里可能因为 API 配额耗尽或进程重启被打断。要撑起这种任务，需要一个能长时间运行、能安全中断再恢复、
-每一步决策都能被回溯审计的循环内核——这是这个仓库要做的事。
+[Roadmap](ROADMAP.md) · [Structure](STRUCTURE.md) · [简体中文](README.zh-CN.md)
 
-## 范围边界
+Loopbase is a domain-agnostic, zero-runtime-dependency Python kernel for loop engineering. It keeps a single agent's thinking-acting loop reviewable and resumable — structured tools, provider-neutral model access, and an append-only evidence log — without replacing the runtime that does the work, and without knowing anything about your domain.
 
-**内核范围内**（本仓库要做的）：单 agent 循环本体——核心循环、模型 I/O、工具执行、目标/任务管理、上下文/记忆
-管理、状态持久化、调度与生命周期、可观测性、安全治理、交接协议。Python 参考实现，CLI 可跑，零强制依赖。
+## Why Loopbase
 
-**明确不做**（non-goals，防止 scope creep）：
-- 多 agent 图编排引擎——只留接口，不在这个仓库里实现
-- 任何 UI，包括 iOS 客户端——那是消费这个内核的下游项目，不在这里
-- 多租户/托管服务——先单机单用户跑通
-- 覆盖所有 LLM 厂商——先做够 OpenAI/DeepSeek 方言 + Anthropic 方言两套，验证了再扩
-- 旅行领域逻辑（具体订机票订酒店的 API 对接）——内核对领域一无所知，旅行只是第一个使用方，
-  `kernel/` 目录下不允许出现旅行相关代码，这是硬性目录边界
+An agent can finish a task in one session. Long-running work is harder: objectives drift, tools fail mid-run, evidence goes stale, and a model can spin forever on a bad tool result. Chat memory and a plain while-loop are not enough to govern that.
 
-## 设计原则（可验证，不是形容词）
+Loopbase keeps the durable loop state in one compact layer:
 
-每条都要能被一个具体测试证伪：
+```
+user goal
+   │
+   ▼
+Loopbase: loop + tool registry + evidence log
+   │
+   ├─ model wants a tool? ──▶ execute → append evidence → continue
+   │
+   └─ model answered? ─────▶ stop, keep transcript + evidence
+   │
+   ▼
+next turn (goals, quota, resume, handoff — later stages)
+```
 
-1. **核心循环零强制运行时依赖**——`kernel/` 下的代码只用标准库能跑通最小闭环，第三方依赖只能是可选加速项
-2. **任意时刻可安全落盘、可完整恢复**——`kill -9` 后重启，能从磁盘状态正确续跑到与不中断时一致的结果，
-   或者明确声明哪段状态允许丢失
-3. **每次状态转移都有可审计证据**——只看事件日志、不看代码，人工也能复盘出"当时为什么做了这个决定"
-4. **核心循环与模型/工具/领域逻辑三者解耦**——换一个模型后端、换一套工具、换一个应用领域，循环代码不用改
-5. **涉及真实世界后果的动作必须过策略引擎**——花钱/发消息/删除数据这类动作，业务代码没有旁路能绕过确认层
+A useful mental model: Loopbase is the loop's operating record, not its brain. The model proposes; the kernel executes tools, records evidence, and decides when the loop may stop.
 
-## 成功标准
+## What Loopbase is / is not
 
-内核做完，判定"扎实"的具体标准（不是主观感受）：
-- 连续跑一个跨小时级的多步任务，中途手动 kill 进程、模拟配额耗尽，重启后正确恢复，目标状态不丢
-- 给定任意一条交接记录，能仅凭证据日志独立复算出记录里的结论，不需要信任发出交接的那个进程
-- 把 `kernel/` 目录整个拷到一个跟旅行完全无关的项目里，换一套工具/prompt 就能跑，不用改内核代码
+Loopbase is useful when you run:
 
-## 贯穿约束：安全与治理层
+- multi-step agent tasks that must be auditable after the fact;
+- tool-using loops that must survive model or API differences;
+- work that will later need goals, quota, recovery, and handoffs.
 
-这一层不是某个阶段，是**每个阶段完成标准都必须回答的三个问题**，不能只在某一步加个字段完事：
-- 这一步新增的动作，有没有过分级策略（常规自动跑 / 需要人类确认 / 直接禁止）？
-- 这一步新摄入的外部数据（工具返回结果、网页内容），有没有被当成不可信输入处理，防止提示注入？
-- 这一步执行的指令，来源是用户在对话里说的，还是从工具/数据里"观察"到的？两者不能混为一谈去执行。
+Loopbase is not:
 
-## 术语速查
+- a multi-agent graph orchestration engine — interface only, Stage 8, not started;
+- a UI or the iOS client — those are downstream consumers of this kernel;
+- a hosted or multi-tenant service;
+- a travel planner — the kernel is domain-agnostic and must stay that way.
 
-| 词 | 指什么 |
+## Try it
+
+Requirements: Python 3.14+ and [uv](https://docs.astral.sh/uv/) (or any Python 3.14 environment).
+
+```bash
+git clone https://github.com/anxiong2025/Loopbase.git
+cd Loopbase
+uv sync --extra dev
+cd packages/kernel && uv run --extra dev pytest tests/unit -q
+```
+
+Run the no-API-key demo (scripted model, shows the full loop and evidence log):
+
+```bash
+cd packages/kernel && uv run --extra dev python ../../examples/stage1_kernel/demo.py
+```
+
+## Capabilities (current)
+
+| Capability | What it does |
 |---|---|
-| **Loop Engineering** | 单个 agent 的思考-行动循环怎么工程化：状态、上下文、配额、检查点 |
-| **Harness** | 循环 + 工具注册表 + 上下文管理 + 持久化 + 调度，叠起来的整体运行时 |
-| **Graph Engineering** | 多个循环实例（不同角色）并行拉起、按节点路由失败，内核之上的编排层 |
+| ReAct loop | Runs model ↔ tool turns until the model answers or max turns is reached |
+| Tool registry | JSON-Schema tool definitions with runtime registration; errors feed back to the model |
+| Model clients | Provider-neutral `ModelClient` protocol; OpenAI/DeepSeek and Anthropic dialects |
+| Evidence log | Append-only JSONL with schema version, timestamp, and id per state transition |
+| Config | Minimal `.env` loading; no credentials in code |
 
-## 文档
+## Roadmap
 
-- [ROADMAP.md](ROADMAP.md) — 分阶段路线图（Stage 0-8）与 12 层模块全景图
-- [STRUCTURE.md](STRUCTURE.md) — 工程结构规范：目录布局、依赖方向规则、契约与测试策略
+| Stage | What | Status |
+|---|---|---|
+| 0–1 | Minimal ReAct loop, tool registry, model dialects, evidence log | ✅ done (v0.1.0) |
+| 2 | Structured goals and task management | next |
+| 3 | Parallel and dependent multi-tool orchestration | planned |
+| 4 | Persistent state, checkpoint recovery, provenance | planned |
+| 5 | Context budget, compression, memory layers | planned |
+| 6 | Quota-aware lifecycle and resume | planned |
+| 7 | Verifiable handoffs | planned |
+| 8 | Graph orchestration (outside the kernel) | not started |
+
+Full detail: [ROADMAP.md](ROADMAP.md).
+
+## Design principles
+
+Each principle must be falsifiable by a concrete test:
+
+1. The core loop has zero mandatory runtime dependencies — `kernel/` runs the minimal loop with stdlib only.
+2. Safe to checkpoint and fully recover at any moment.
+3. Every state transition has auditable evidence.
+4. Core loop, model backends, tools, and domain logic are decoupled.
+5. Real-world actions must pass the policy layer.
+
+## Repository layout
+
+```
+packages/kernel/   the open-source deliverable: domain-agnostic, stdlib-only
+packages/travel/   travel domain (first consumer, later)
+apps/              api / web / ios clients (consumers, later)
+examples/          runnable stage demos
+schemas/           language-neutral JSON Schemas (source of truth)
+```
+
+See [STRUCTURE.md](STRUCTURE.md) for the full contract.
+
+## Current status
+
+v0.1.0 — early but usable single-agent loop kernel. Stages 0–1 are complete: minimal ReAct loop, runtime tool registration, OpenAI/DeepSeek + Anthropic dialects, evidence log, 8 passing unit tests, and a key-free demo. It is not a full agent platform, not a graph engine, and not an autonomous production controller.
+
+## Contributing
+
+Loopbase is early. The most useful feedback comes from real long-running agent projects: where the loop helped, where it felt heavy, and which controls disappeared from view. Open an issue for bugs and feature requests; PRs for small, public-safe improvements.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
