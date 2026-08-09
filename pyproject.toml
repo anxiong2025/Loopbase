@@ -5,7 +5,7 @@ requires-python = ">=3.14"
 dependencies = ["loopbase", "finance-agent"]
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "apps/api"]
 
 [tool.uv.sources]
 loopbase = { workspace = true }

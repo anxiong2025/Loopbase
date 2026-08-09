@@ -1,14 +1,14 @@
-"""实时股价工具：通过 Alpha Vantage GLOBAL_QUOTE 获取（免费 key，限流）。"""
+"""实时股价工具：通过 Yahoo Finance 公开行情接口获取（免费，无 key，无每日限额）。"""
 
 from __future__ import annotations
 
 from loopbase import ToolSpec
 
-from . import _alpha
+from . import _yahoo
 
 SPEC = ToolSpec(
     name="get_stock_price",
-    description="查询指定美股的最新价格与当日涨跌（数据源：Alpha Vantage）。",
+    description="查询指定美股的最新价格与当日涨跌（数据源：Yahoo Finance）。",
     parameters={
         "type": "object",
         "properties": {
@@ -24,20 +24,13 @@ SPEC = ToolSpec(
 
 def impl(symbol: str) -> str:
     """返回 {symbol} 的最新价与当日涨跌。"""
-    data = _alpha.fetch("GLOBAL_QUOTE", symbol)
-    quote = data.get("Global Quote") or {}
-    if not quote:
-        raise RuntimeError(_alpha.error_text(data) or f"未找到 {symbol} 的行情数据")
+    quote = _yahoo.fetch_quote(symbol)
 
-    parts = [f"{symbol} 最新价 {quote.get('05. price')} USD"]
-    change = quote.get("09. change")
-    percent = quote.get("10. change percent")
-    if change and percent:
-        parts.append(f"当日 {change}（{percent}）")
-    elif change:
-        parts.append(f"当日 {change}")
-    if quote.get("07. latest trading day"):
-        parts.append(f"交易日 {quote.get('07. latest trading day')}")
+    parts = [f"{symbol} 最新价 {quote['price']} {quote.get('currency') or 'USD'}"]
+    if quote.get("change") is not None and quote.get("changePercent") is not None:
+        parts.append(f"当日 {quote['change']:+.2f}（{quote['changePercent']:+.2f}%）")
+    if quote.get("week52Low") and quote.get("week52High"):
+        parts.append(f"52周区间 {quote['week52Low']} ~ {quote['week52High']}")
     return "，".join(parts)
 
 

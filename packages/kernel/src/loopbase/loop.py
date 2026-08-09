@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,12 +38,14 @@ class ReActLoop:
         max_turns: int = 8,
         system_prompt: str = "",
         evidence_log: JsonlEvidenceLog | None = None,
+        on_event: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> None:
         self.client = client
         self.tools = tools
         self.max_turns = max_turns
         self.system_prompt = system_prompt
         self.evidence_log = evidence_log
+        self.on_event = on_event
 
     def run(self, user_input: str) -> RunResult:
         messages: list[Message] = []
@@ -130,3 +133,5 @@ class ReActLoop:
     def _log(self, kind: str, payload: dict[str, Any]) -> None:
         if self.evidence_log is not None:
             self.evidence_log.append(kind, payload)
+        if self.on_event is not None:
+            self.on_event(kind, payload)

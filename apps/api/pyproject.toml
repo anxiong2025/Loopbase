@@ -1,0 +1,17 @@
+[project]
+name = "api"
+version = "0.1.0"
+description = "HTTP 服务：把 Loopbase 金融 Agent 循环暴露给浏览器"
+requires-python = ">=3.14"
+dependencies = ["fastapi", "uvicorn", "loopbase", "finance-agent"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/api"]
+
+[tool.uv.sources]
+loopbase = { workspace = true }
+finance-agent = { workspace = true }
