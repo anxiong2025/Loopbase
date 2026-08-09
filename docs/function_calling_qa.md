@@ -1,6 +1,6 @@
 # Function Calling 面试问答整理
 
-配套代码：`function_calling_loop.py`（跑一遍能看到真实的 request/response）
+配套代码：`examples/stage2_finance/demo.py`（真实模型，跑一遍能看到真实的 request/response）
 
 ---
 
@@ -41,9 +41,9 @@
 7. **循环终止判断**：看 `finish_reason`（或 Anthropic 的 `stop_reason`）是否为 `"stop"` / `"end_turn"`，是则结束；否则回到步骤 3。
 
 对应代码位置：
-- 工具定义 → `function_calling_loop.py:35-50`（`TOOLS`）
-- 每轮携带 → `function_calling_loop.py:74-79`（`call_model` 里 `"tools": TOOLS`）
-- 循环主体 → `function_calling_loop.py:104-152`
+- 工具定义 → `packages/finance/src/finance_agent/tools/`（SPEC + register 样板，对应内核 `ToolSpec`）
+- 每轮携带 → 内核 `OpenAICompatibleClient.complete()` 每次都组装 `tools` 字段
+- 循环主体 → 内核 `ReActLoop.run()`（`packages/kernel/src/loopbase/loop.py`）
 
 ---
 

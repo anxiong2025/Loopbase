@@ -56,9 +56,13 @@ loopbase/
 │   │       ├── recovery/            ★ kill -9、配额耗尽、resume
 │   │       └── fixtures/            录制的模型响应，CI 回放不需要 API key
 │   │
-│   └── travel/                  旅行领域：工具实现、prompt、目标模板
+│   ├── travel/                  旅行领域（规划中）：工具实现、prompt、目标模板
+│   │   ├── pyproject.toml
+│   │   ├── src/travel_agent/
+│   │   └── tests/
+│   └── finance/                 金融领域（当前实现）：工具实现、prompt、目标模板
 │       ├── pyproject.toml
-│       ├── src/travel_agent/
+│       ├── src/finance_agent/
 │       └── tests/
 │
 ├── apps/
@@ -70,7 +74,7 @@ loopbase/
 │   └── ios/                     以后的 SwiftUI（iOS + macOS 共享 target）
 │
 ├── examples/
-│   └── stage0_react_loop/       现有两个 demo 迁过来，保持可跑
+│   └── stage2_finance/         金融领域 demo（真实模型，打印每次请求/响应）
 │
 ├── docs/
 │   ├── adr/                     架构决策记录

@@ -1,6 +1,6 @@
 # Loopbase
 
-**The open, provider-neutral, lightweight loop-engineering state kernel for long-running agent teams.**
+**The open agent framework for finance — tools are capability, evidence is trust.**
 
 Keep the loop moving. Keep the evidence honest.
 
@@ -11,7 +11,11 @@ Keep the loop moving. Keep the evidence honest.
 
 [Roadmap](ROADMAP.md) · [Structure](STRUCTURE.md) · [简体中文](README.zh-CN.md)
 
-Loopbase is a domain-agnostic, zero-runtime-dependency Python kernel for loop engineering. It keeps a single agent's thinking-acting loop reviewable and resumable — structured tools, provider-neutral model access, and an append-only evidence log — without replacing the runtime that does the work, and without knowing anything about your domain.
+Loopbase is an open agent harness for the finance domain: a provider-neutral, stdlib-only loop
+kernel (`packages/kernel`) plus the finance tool layer (`packages/finance`). It keeps an agent's
+thinking-acting loop reviewable and resumable — structured tools, provider-neutral model access,
+and an append-only evidence log. The kernel stays domain-agnostic, so travel or other domains can
+plug in later without changing it.
 
 ## Why Loopbase
 
@@ -48,7 +52,7 @@ Loopbase is not:
 - a multi-agent graph orchestration engine — interface only, Stage 8, not started;
 - a UI or the iOS client — those are downstream consumers of this kernel;
 - a hosted or multi-tenant service;
-- a travel planner — the kernel is domain-agnostic and must stay that way.
+- a finance app or advisor — it's the harness underneath; domain logic lives in `packages/finance`, and the kernel stays domain-agnostic.
 
 ## Try it
 
@@ -57,14 +61,20 @@ Requirements: Python 3.14+ and [uv](https://docs.astral.sh/uv/) (or any Python 3
 ```bash
 git clone https://github.com/anxiong2025/Loopbase.git
 cd Loopbase
-uv sync --extra dev
-cd packages/kernel && uv run --extra dev pytest tests/unit -q
+uv sync
 ```
 
-Run the no-API-key demo (scripted model, shows the full loop and evidence log):
+Run the real-model demo (prints every request/response body; needs an API key):
 
 ```bash
-cd packages/kernel && uv run --extra dev python ../../examples/stage1_kernel/demo.py
+cp .env.example .env   # fill in your API key / base_url / model
+uv run examples/stage2_finance/demo.py
+```
+
+Run the unit tests:
+
+```bash
+uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -q
 ```
 
 ## Capabilities (current)
@@ -106,7 +116,8 @@ Each principle must be falsifiable by a concrete test:
 
 ```
 packages/kernel/   the open-source deliverable: domain-agnostic, stdlib-only
-packages/travel/   travel domain (first consumer, later)
+packages/finance/  finance domain (current): tool impls, prompts, goal templates
+packages/travel/   travel domain (planned): tool impls, prompts, goal templates
 apps/              api / web / ios clients (consumers, later)
 examples/          runnable stage demos
 schemas/           language-neutral JSON Schemas (source of truth)

@@ -1,6 +1,6 @@
 # Loopbase
 
-**为长时间运行的 AI 代理团队打造的、开放且不绑定任何模型厂商的轻量级循环工程状态内核。**
+**面向金融的开放智能体框架——工具即能力，证据即信任。**
 
 让循环保持运转，让证据保持诚实。
 
@@ -11,7 +11,10 @@
 
 [路线图](ROADMAP.md) · [工程结构](STRUCTURE.md) · [English](README.md)
 
-Loopbase 是一个领域无关、零强制运行时依赖的 Python 内核，专门做循环工程（loop engineering）。它让单个 agent 的"思考—行动"循环可审查、可恢复：结构化工具、与厂商无关的模型接入、append-only 的证据日志——不替换真正干活的运行时，也不需要知道你的业务领域是什么。
+Loopbase 是一个面向金融领域的开源 Agent Harness：以零强制依赖、与厂商无关的循环内核
+（`packages/kernel`）为基座，加上金融工具层（`packages/finance`）。它让 agent 的"思考—行动"
+循环可审查、可恢复：结构化工具、与厂商无关的模型接入、append-only 的证据日志。内核保持
+领域无关，旅行等其他领域以后可以随时接入，无需改动内核。
 
 ## 为什么需要 Loopbase
 
@@ -48,7 +51,7 @@ Loopbase 不是：
 - 多 agent 图编排引擎——只留接口，Stage 8，尚未启动；
 - UI 或 iOS 客户端——那些是这个内核的下游使用方；
 - 托管服务或租户化服务；
-- 旅行规划器——内核是领域无关的，必须一直保持无关。
+- 金融应用或荐股产品——Loopbase 是底下的 harness，领域逻辑在 `packages/finance`，内核保持领域无关。
 
 ## 快速体验
 
@@ -57,14 +60,20 @@ Loopbase 不是：
 ```bash
 git clone https://github.com/anxiong2025/Loopbase.git
 cd Loopbase
-uv sync --extra dev
-cd packages/kernel && uv run --extra dev pytest tests/unit -q
+uv sync
 ```
 
-跑一个不需要 API key 的 demo（脚本化模型，展示完整循环和证据日志）：
+跑真实模型 demo（每轮打印完整请求/响应，需要 API key）：
 
 ```bash
-cd packages/kernel && uv run --extra dev python ../../examples/stage1_kernel/demo.py
+cp .env.example .env   # 填入 API key / base_url / model
+uv run examples/stage2_finance/demo.py
+```
+
+跑单元测试：
+
+```bash
+uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -q
 ```
 
 ## 当前能力

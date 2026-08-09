@@ -26,7 +26,7 @@ Stage 0-7 是内核要做的部分，Stage 8 是内核之外的编排层，暂�
 
 ## Stage 0 — ReAct 核心循环（已完成）
 
-对应文件：[examples/stage0_react_loop/](examples/stage0_react_loop/)
+对应文件：[examples/stage2_finance/demo.py](examples/stage2_finance/demo.py)（金融领域，真实模型，打印每次请求/响应）
 
 已具备：工具定义（JSON Schema）+ 每轮携带、`tool_calls` 解析与回填、`finish_reason`/`stop_reason` 终止判断、
 双方言对照（OpenAI/DeepSeek vs Anthropic）、熔断、执行报错回填不 crash、`.env` 密钥加载（配置层的最简版）。
