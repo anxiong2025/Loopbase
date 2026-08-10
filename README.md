@@ -7,7 +7,7 @@ Keep the loop moving. Keep the evidence honest.
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.14+-blue)](pyproject.toml)
 [![Dependencies](https://img.shields.io/badge/dependencies-stdlib%20only-brightgreen)](packages/kernel/pyproject.toml)
-[![Status](https://img.shields.io/badge/status-Stage%201-yellow)](ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-Stage%202%20in%20progress-orange)](ROADMAP.md)
 
 [Roadmap](ROADMAP.md) · [Structure](STRUCTURE.md) · [简体中文](README.zh-CN.md)
 
@@ -85,6 +85,8 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 | Tool registry | JSON-Schema tool definitions with runtime registration; errors feed back to the model |
 | Model clients | Provider-neutral `ModelClient` protocol; OpenAI/DeepSeek and Anthropic dialects |
 | Evidence log | Append-only JSONL with schema version, timestamp, and id per state transition |
+| Structured goals | Versioned `goal/v1` data with objective, success criteria, constraints, and context |
+| Task planning | Model-proposed tasks; runtime-owned ids, dependency DAG validation, and lifecycle states |
 | Config | Minimal `.env` loading; no credentials in code |
 
 ## Roadmap
@@ -92,7 +94,7 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 | Stage | What | Status |
 |---|---|---|
 | 0–1 | Minimal ReAct loop, tool registry, model dialects, evidence log | ✅ done (v0.1.0) |
-| 2 | Structured goals and task management | next |
+| 2 | Structured goals and task management | 🚧 goals + task planning done; replanning next |
 | 3 | Parallel and dependent multi-tool orchestration | planned |
 | 4 | Persistent state, checkpoint recovery, provenance | planned |
 | 5 | Context budget, compression, memory layers | planned |
@@ -127,7 +129,7 @@ See [STRUCTURE.md](STRUCTURE.md) for the full contract.
 
 ## Current status
 
-v0.1.0 — early but usable single-agent loop kernel. Stages 0–1 are complete: minimal ReAct loop, runtime tool registration, OpenAI/DeepSeek + Anthropic dialects, evidence log, 8 passing unit tests, and a key-free demo. It is not a full agent platform, not a graph engine, and not an autonomous production controller.
+v0.1.0 plus Stage 2 development — early but usable single-agent loop kernel. Stages 0–1 are complete; Stage 2 now has structured goals plus model-proposed, runtime-validated task plans. Automatic task execution and replanning are next. It is not a full agent platform, not a graph engine, and not an autonomous production controller.
 
 ## Contributing
 

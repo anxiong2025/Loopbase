@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.14+-blue)](pyproject.toml)
 [![Dependencies](https://img.shields.io/badge/dependencies-stdlib%20only-brightgreen)](packages/kernel/pyproject.toml)
-[![Status](https://img.shields.io/badge/status-Stage%201-yellow)](ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-Stage%202%20in%20progress-orange)](ROADMAP.md)
 
 [路线图](ROADMAP.md) · [工程结构](STRUCTURE.md) · [English](README.md)
 
@@ -84,6 +84,8 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 | 工具注册表 | JSON Schema 工具定义，支持运行时注册；错误会回填给模型 |
 | 模型客户端 | 厂商无关的 `ModelClient` 协议；已实现 OpenAI/DeepSeek 与 Anthropic 两种方言 |
 | 证据日志 | append-only JSONL，每条状态转移带 schema 版本、时间戳、唯一 id |
+| 结构化目标 | `goal/v1` 版本化数据，包含目标、成功标准、约束和上下文 |
+| 任务规划 | LLM 提议任务；Runtime 分配 ID、校验依赖 DAG 并管理生命周期状态 |
 | 配置 | 极简 `.env` 加载；密钥不进代码 |
 
 ## 路线图
@@ -91,7 +93,7 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | 0–1 | 最小 ReAct 循环、工具注册表、模型方言、证据日志 | ✅ 已完成（v0.1.0） |
-| 2 | 结构化目标与任务管理 | 下一步 |
+| 2 | 结构化目标与任务管理 | 🚧 目标与任务规划已完成；下一步重新规划 |
 | 3 | 并行与顺序依赖的多工具编排 | 计划中 |
 | 4 | 状态持久化、检查点恢复、来源标记 | 计划中 |
 | 5 | 上下文预算、压缩、记忆分层 | 计划中 |
@@ -125,7 +127,7 @@ schemas/           语言中立的 JSON Schema（唯一真相源）
 
 ## 当前状态
 
-v0.1.0 —— 早期但可用的单 agent 循环内核。Stage 0–1 已完成：最小 ReAct 循环、运行时工具注册、OpenAI/DeepSeek + Anthropic 方言、证据日志、8 个通过的单元测试、一个免 key 的 demo。它不是完整的 agent 平台，不是图引擎，也不是自主生产控制器。
+v0.1.0 + Stage 2 开发中——早期但可用的单 agent 循环内核。Stage 0–1 已完成；Stage 2 已具备结构化目标，以及由 LLM 提议、Runtime 校验的任务计划。下一步是任务自动执行和重新规划。它不是完整的 agent 平台，不是图引擎，也不是自主生产控制器。
 
 ## 参与贡献
 

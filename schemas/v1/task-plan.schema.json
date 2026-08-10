@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loopbase.dev/schemas/v1/task-plan.schema.json",
+  "title": "Loopbase Task Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "goal_id", "tasks", "created_at"],
+  "properties": {
+    "schema_version": {"const": "task-plan/v1"},
+    "id": {"type": "string", "minLength": 1},
+    "goal_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "number", "minimum": 0},
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "goal_id",
+          "title",
+          "description",
+          "depends_on",
+          "completion_criteria",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "goal_id": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "depends_on": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "completion_criteria": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "status": {
+            "enum": ["pending", "in_progress", "completed", "failed", "blocked"]
+          },
+          "created_at": {"type": "number", "minimum": 0},
+          "updated_at": {"type": "number", "minimum": 0}
+        }
+      }
+    }
+  }
+}

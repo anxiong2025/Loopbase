@@ -24,7 +24,22 @@ docker run -p 8000:8000 --env-file .env loopbase-api
 
 - `GET /` 浏览器页面
 - `GET /health` 健康检查
-- `POST /analyze` 请求体 `{"question": "...", "max_turns": 5}`，返回最终分析、轮数、停止原因、执行过的工具
+- `POST /analyze` 接收结构化目标，返回目标记录、最终分析、轮数、停止原因和执行过的工具
+- `POST /plan` 接收同一结构化目标，由 LLM 提议任务，再返回 Runtime 校验后的 `task-plan/v1`
+
+`/analyze` 请求示例：
+
+```json
+{
+  "goal": {
+    "objective": "分析 AAPL 的股价与基本面",
+    "success_criteria": ["使用真实行情数据", "给出简明结论"],
+    "constraints": ["注明不构成投资建议"],
+    "context": {}
+  },
+  "max_turns": 5
+}
+```
 
 ## 注意
 

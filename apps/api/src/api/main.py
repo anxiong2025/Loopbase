@@ -18,19 +18,28 @@ import json
 import os
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Self
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from finance_agent import market_data, sec_edgar
 from finance_agent.tools import register_all
-from loopbase import JsonlEvidenceLog, OpenAICompatibleClient, ReActLoop, ToolRegistry
+from loopbase import (
+    Goal,
+    JsonlEvidenceLog,
+    OpenAICompatibleClient,
+    PlanGenerationError,
+    ReActLoop,
+    TaskPlanner,
+    ToolRegistry,
+)
 from loopbase.config import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 load_dotenv()  # 本地读取根目录 .env；容器里用环境变量传入
 
@@ -86,19 +95,42 @@ _citations_cache = _TTLCache(ttl_seconds=6 * 3600)
 _report_cache = _TTLCache(ttl_seconds=6 * 3600)
 
 
+class GoalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_default=True)
+
+    schema_version: Literal["goal/v1"] = "goal/v1"
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex, min_length=1)
+    objective: str = Field(min_length=1)
+    success_criteria: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+    created_at: float = Field(default_factory=time.time, ge=0)
+
+    def to_domain(self) -> Goal:
+        return Goal.from_dict(self.model_dump())
+
+    @model_validator(mode="after")
+    def validate_goal_contract(self) -> Self:
+        self.to_domain()
+        return self
+
+
 class AnalyzeRequest(BaseModel):
-    question: str = (
-        "查询苹果公司（AAPL）的最新股价和核心财务指标，简要分析一下。"
-    )
-    max_turns: int = 5
+    model_config = ConfigDict(extra="forbid")
+
+    goal: GoalRequest
+    max_turns: int = Field(default=5, ge=1, le=20)
     force_refresh: bool = False
 
 
-def _build_loop(
-    max_turns: int,
-    on_event: Callable[[str, dict[str, Any]], None] | None = None,
-) -> ReActLoop:
-    """按当前配置构建一次独立的 agent 循环（每次请求新注册工具，避免共享状态）。"""
+class PlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    goal: GoalRequest
+    max_tasks: int = Field(default=12, ge=1, le=30)
+
+
+def _build_client() -> OpenAICompatibleClient:
     api_key = (
         os.environ.get("LOOPBASE_API_KEY")
         or os.environ.get("DEEPSEEK_API_KEY")
@@ -106,15 +138,24 @@ def _build_loop(
     )
     if not api_key:
         raise RuntimeError("未找到 API key，请配置 .env 或环境变量（参考 .env.example）")
-    base_url = os.environ.get("LOOPBASE_BASE_URL", "https://api.deepseek.com/v1")
-    model = os.environ.get("LOOPBASE_MODEL", "deepseek-chat")
+    return OpenAICompatibleClient(
+        api_key=api_key,
+        base_url=os.environ.get("LOOPBASE_BASE_URL", "https://api.deepseek.com/v1"),
+        model=os.environ.get("LOOPBASE_MODEL", "deepseek-chat"),
+    )
 
+
+def _build_loop(
+    max_turns: int,
+    on_event: Callable[[str, dict[str, Any]], None] | None = None,
+) -> ReActLoop:
+    """按当前配置构建一次独立的 agent 循环（每次请求新注册工具，避免共享状态）。"""
     tools = ToolRegistry()
     register_all(tools)
 
     evidence_dir = Path(os.environ.get("LOOPBASE_EVIDENCE_DIR", "/tmp"))
     return ReActLoop(
-        client=OpenAICompatibleClient(api_key=api_key, base_url=base_url, model=model),
+        client=_build_client(),
         tools=tools,
         max_turns=max_turns,
         system_prompt=SYSTEM_PROMPT,
@@ -138,16 +179,29 @@ def analyze(request: AnalyzeRequest) -> dict:
     """跑一轮完整 agent 循环，返回最终分析。"""
     try:
         loop = _build_loop(request.max_turns)
-        result = loop.run(request.question)
+        result = loop.run(request.goal.to_domain())
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {
-        "question": request.question,
+        "goal": result.goal.as_dict(),
         "final_answer": result.final_answer,
         "turns": result.turns,
         "stopped_by": result.stopped_by,
         "tool_calls_executed": result.tool_calls_executed,
     }
+
+
+@app.post("/plan")
+def plan_tasks(request: PlanRequest) -> dict:
+    """让模型提议任务清单，再由 Runtime 生成并校验 TaskPlan。"""
+    try:
+        planner = TaskPlanner(client=_build_client(), max_tasks=request.max_tasks)
+        plan = planner.plan(request.goal.to_domain())
+    except PlanGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return plan.as_dict()
 
 
 @app.get("/config")
@@ -171,13 +225,23 @@ async def analyze_stream(request: AnalyzeRequest) -> StreamingResponse:
     缓存 6 小时——刷新页面不该重新跑一遍真实的 LLM + 工具调用。
     force_refresh 可以绕过缓存强制重新生成。
     """
-    cache_key = f"{request.question}::{request.max_turns}"
+    goal = request.goal.to_domain()
+    cache_key = json.dumps(
+        {"goal": goal.model_payload(), "max_turns": request.max_turns},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
 
     async def event_source():
         if not request.force_refresh:
             cached = _report_cache.get(cache_key)
             if cached is not None:
-                yield f"data: {json.dumps({**cached, 'cache_hit': True}, ensure_ascii=False)}\n\n"
+                cached_payload = {
+                    **cached,
+                    "goal": goal.as_dict(),
+                    "cache_hit": True,
+                }
+                yield f"data: {json.dumps(cached_payload, ensure_ascii=False)}\n\n"
                 return
 
         queue: asyncio.Queue[dict] = asyncio.Queue()
@@ -189,8 +253,9 @@ async def analyze_stream(request: AnalyzeRequest) -> StreamingResponse:
         def worker() -> None:
             try:
                 agent_loop = _build_loop(request.max_turns, on_event=emit)
-                result = agent_loop.run(request.question)
+                result = agent_loop.run(goal)
                 done_payload = {
+                    "goal": result.goal.as_dict(),
                     "final_answer": result.final_answer,
                     "turns": result.turns,
                     "stopped_by": result.stopped_by,

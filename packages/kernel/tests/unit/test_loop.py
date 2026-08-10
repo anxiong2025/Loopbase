@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from loopbase import (
+    Goal,
     JsonlEvidenceLog,
     Message,
     ModelResponse,
@@ -87,18 +88,53 @@ def test_loop_runs_tool_then_answers() -> None:
     client = make_client()
     loop = ReActLoop(client=client, tools=make_registry())
 
-    result = loop.run("东京天气怎么样？")
+    result = loop.run(Goal(objective="东京天气怎么样？"))
 
     assert result.final_answer == "东京 26°C，晴天。"
     assert result.turns == 2
     assert result.stopped_by == "model"
     assert result.tool_calls_executed == ["get_weather"]
+    assert result.goal.objective == "东京天气怎么样？"
 
     # 工具结果确实回填给了模型（第二轮上下文里有 tool 消息）
     _, tools_sent = client.calls[0]
     assert [t.name for t in tools_sent] == ["get_weather"]
     second_context = client.calls[1][0]
     assert any(m.role == "tool" and m.tool_call_id == "call_1" for m in second_context)
+
+
+def test_loop_rejects_unstructured_string_input() -> None:
+    client = make_client(first_tool=False)
+    loop = ReActLoop(client=client, tools=make_registry())
+
+    with pytest.raises(TypeError, match="goal must be a Goal"):
+        loop.run("东京天气怎么样？")  # type: ignore[arg-type]
+
+
+def test_loop_accepts_structured_goal_and_preserves_it_as_data(tmp_path) -> None:
+    client = make_client(first_tool=False)
+    goal = Goal(
+        objective="给出东京天气建议",
+        success_criteria=["包含温度", "给出出行建议"],
+        constraints=["使用工具返回的数据"],
+        context={"city": "东京"},
+        id="goal_tokyo",
+        created_at=123.0,
+    )
+    log = JsonlEvidenceLog(tmp_path / "evidence.jsonl")
+    loop = ReActLoop(client=client, tools=make_registry(), evidence_log=log)
+
+    result = loop.run(goal)
+
+    assert result.goal == goal
+    first_context = client.calls[0][0]
+    user_message = next(message for message in first_context if message.role == "user")
+    assert '"objective": "给出东京天气建议"' in user_message.content
+    assert '"success_criteria"' in user_message.content
+
+    records = log.read_all()
+    goal_record = next(record for record in records if record.kind == "goal.start")
+    assert goal_record.payload["goal"] == goal.as_dict()
 
 
 def test_registry_rejects_duplicate_name() -> None:
@@ -130,7 +166,7 @@ def test_unknown_tool_returns_error_instead_of_crashing() -> None:
     )
     loop = ReActLoop(client=client, tools=registry)
 
-    result = loop.run("测试")
+    result = loop.run(Goal(objective="测试"))
 
     assert result.final_answer is not None
     # 错误作为 tool 结果回填，模型看到了错误文本
@@ -150,7 +186,7 @@ def test_loop_stops_at_max_turns() -> None:
     client = ScriptedClient(script=[tool_response] * 10)  # 永远想调工具
     loop = ReActLoop(client=client, tools=make_registry(), max_turns=3)
 
-    result = loop.run("一直调用吧")
+    result = loop.run(Goal(objective="一直调用吧"))
 
     assert result.final_answer is None
     assert result.turns == 3
@@ -163,7 +199,7 @@ def test_evidence_log_records_every_transition(tmp_path) -> None:
     log = JsonlEvidenceLog(log_path)
     loop = ReActLoop(client=client, tools=make_registry(), evidence_log=log)
 
-    loop.run("东京天气怎么样？")
+    loop.run(Goal(objective="东京天气怎么样？"))
 
     records = log.read_all()
     kinds = [r.kind for r in records]

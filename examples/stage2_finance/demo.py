@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from loopbase import (
+    Goal,
     JsonlEvidenceLog,
     OpenAICompatibleClient,
     ReActLoop,
@@ -186,13 +187,19 @@ def main() -> None:
         " ".join(sys.argv[1:])
         or "查询苹果公司（AAPL）的最新股价和核心财务指标，简要分析一下。"
     )
-    result = loop.run(user_input)
+    goal = Goal(
+        objective=user_input,
+        success_criteria=["使用工具查询真实数据", "给出简明的中文分析"],
+        constraints=["注明数据仅供参考，不构成投资建议"],
+    )
+    result = loop.run(goal)
 
     transcript = {
         "model": model,
         "base_url": base_url,
         "system_prompt": system_prompt,
         "user_input": user_input,
+        "goal": goal.as_dict(),
         "tools": [spec.as_dict() for spec in tools.specs()],
         "turns": result.turns,
         "stopped_by": result.stopped_by,

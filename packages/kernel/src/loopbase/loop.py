@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from .goals import Goal
 from .models.base import Message, ModelClient
 from .observability import JsonlEvidenceLog
 from .tools.registry import ToolRegistry
@@ -24,6 +25,7 @@ from .tools.registry import ToolRegistry
 class RunResult:
     final_answer: str | None
     turns: int
+    goal: Goal
     messages: list[Message] = field(default_factory=list)
     tool_calls_executed: list[str] = field(default_factory=list)
     stopped_by: str = ""  # "model" | "max_turns"
@@ -47,11 +49,17 @@ class ReActLoop:
         self.evidence_log = evidence_log
         self.on_event = on_event
 
-    def run(self, user_input: str) -> RunResult:
+    def run(self, goal: Goal) -> RunResult:
+        """Execute a structured Stage 2 goal."""
+        if not isinstance(goal, Goal):
+            raise TypeError("goal must be a Goal")
+
         messages: list[Message] = []
         if self.system_prompt:
             messages.append(Message(role="system", content=self.system_prompt))
-        messages.append(Message(role="user", content=user_input))
+        messages.append(Message(role="user", content=goal.to_user_message()))
+
+        self._log("goal.start", {"goal": goal.as_dict()})
 
         executed: list[str] = []
         stopped_by = ""
@@ -100,6 +108,7 @@ class ReActLoop:
                 messages=messages,
                 tool_calls_executed=executed,
                 stopped_by=stopped_by,
+                goal=goal,
             )
 
         stopped_by = "max_turns"
@@ -110,6 +119,7 @@ class ReActLoop:
             messages=messages,
             tool_calls_executed=executed,
             stopped_by=stopped_by,
+            goal=goal,
         )
 
     def _execute_tool(self, name: str, arguments: dict[str, Any], turn: int) -> str:

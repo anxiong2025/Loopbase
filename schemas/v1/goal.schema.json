@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loopbase.dev/schemas/v1/goal.schema.json",
+  "title": "Loopbase Goal v1",
+  "description": "A structured objective accepted by the Loopbase runtime.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "objective",
+    "success_criteria",
+    "constraints",
+    "context",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "goal/v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1
+    },
+    "success_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "context": {
+      "type": "object"
+    },
+    "created_at": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}
