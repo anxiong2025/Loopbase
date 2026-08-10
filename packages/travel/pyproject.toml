@@ -1,13 +1,16 @@
 [project]
-name = "finance-agent"
+name = "travel-agent"
 version = "0.1.0"
-description = "金融领域包：工具实现、prompt、目标模板（loopbase 第一个领域消费者）"
+description = "旅行攻略领域包：真实信息工具、预算计算和旅行助手提示词"
 requires-python = ">=3.14"
 dependencies = ["loopbase"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/travel_agent"]
 
 [tool.uv.sources]
 loopbase = { workspace = true }

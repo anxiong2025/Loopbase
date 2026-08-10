@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from .goals import Goal
@@ -14,6 +15,25 @@ from .tasks import Task, TaskPlan
 
 class PlanGenerationError(RuntimeError):
     """The model did not return a valid task-plan proposal."""
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningResult:
+    """A validated plan together with the untouched model response."""
+
+    plan: TaskPlan
+    raw_model_content: str
+    finish_reason: str
+    usage: dict[str, Any] | None
+    provider_response: dict[str, Any]
+
+    def raw_response_as_dict(self) -> dict[str, Any]:
+        return {
+            "content": self.raw_model_content,
+            "finish_reason": self.finish_reason,
+            "usage": self.usage,
+            "provider_response": self.provider_response,
+        }
 
 
 _PROPOSAL_FIELDS = {
@@ -40,6 +60,11 @@ class TaskPlanner:
         self.max_tasks = max_tasks
 
     def plan(self, goal: Goal) -> TaskPlan:
+        return self.plan_with_trace(goal).plan
+
+    def plan_with_trace(self, goal: Goal) -> PlanningResult:
+        """Plan once and retain the response exactly as returned by the client."""
+
         if not isinstance(goal, Goal):
             raise TypeError("goal must be a Goal")
         messages = [
@@ -54,7 +79,14 @@ class TaskPlanner:
         if response.finish_reason != "stop" or response.message.tool_calls:
             raise PlanGenerationError("planner must return one final JSON response")
         proposal = _parse_json_object(response.message.content)
-        return self._build_plan(goal, proposal)
+        plan = self._build_plan(goal, proposal)
+        return PlanningResult(
+            plan=plan,
+            raw_model_content=response.message.content,
+            finish_reason=response.finish_reason,
+            usage=response.usage,
+            provider_response=response.raw,
+        )
 
     def _system_prompt(self) -> str:
         return f"""You are a task planner inside an agent runtime.

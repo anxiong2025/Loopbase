@@ -27,7 +27,10 @@ loopbase/
 │   └── v1/
 │       ├── event.schema.json        事件日志记录（Stage 4）
 │       ├── checkpoint.schema.json   检查点（Stage 6）
-│       ├── goal.schema.json         结构化目标与任务（Stage 2）
+│       ├── goal.schema.json         结构化目标（Stage 2）
+│       ├── intake-result.schema.json 自然语言目标接入结果（Stage 2）
+│       ├── task-plan.schema.json    任务计划（Stage 2）
+│       ├── execution-result.schema.json 任务执行结果（Stage 2）
 │       └── handoff.schema.json      交接记录（Stage 7）
 │
 ├── packages/
@@ -56,25 +59,21 @@ loopbase/
 │   │       ├── recovery/            ★ kill -9、配额耗尽、resume
 │   │       └── fixtures/            录制的模型响应，CI 回放不需要 API key
 │   │
-│   ├── travel/                  旅行领域（规划中）：工具实现、prompt、目标模板
-│   │   ├── pyproject.toml
-│   │   ├── src/travel_agent/
-│   │   └── tests/
-│   └── finance/                 金融领域（当前实现）：工具实现、prompt、目标模板
+│   └── travel/                  旅行攻略领域（当前实现）：工具、数据源适配器、prompt
 │       ├── pyproject.toml
-│       ├── src/finance_agent/
+│       ├── src/travel_agent/
 │       └── tests/
 │
 ├── apps/
 │   ├── api/                     HTTP 服务：把 kernel 会话暴露给客户端（web 端先用）
 │   │   ├── pyproject.toml
-│   │   ├── src/travel_api/
+│   │   ├── src/api/
 │   │   └── tests/
 │   ├── web/                     web 前端（独立 package.json，先上的客户端）
 │   └── ios/                     以后的 SwiftUI（iOS + macOS 共享 target）
 │
 ├── examples/
-│   └── stage2_finance/         金融领域 demo（真实模型，打印每次请求/响应）
+│   └── stage2_travel/          旅行攻略 demo（真实模型，打印每次请求/响应）
 │
 ├── docs/
 │   ├── adr/                     架构决策记录

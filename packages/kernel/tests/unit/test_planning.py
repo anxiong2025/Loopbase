@@ -81,6 +81,18 @@ def test_planner_turns_model_keys_into_runtime_owned_task_ids() -> None:
     assert client.calls[0][1] == []
 
 
+def test_planner_can_return_the_unprocessed_model_response() -> None:
+    content = json.dumps(_proposal(), ensure_ascii=False)
+    client = PlannerClient(content)
+
+    result = TaskPlanner(client=client).plan_with_trace(_goal())
+
+    assert result.raw_model_content == content
+    assert result.finish_reason == "stop"
+    assert result.provider_response == {}
+    assert result.plan.tasks[0].title == "查询交通和景点"
+
+
 def test_planner_accepts_a_json_code_fence() -> None:
     content = "```json\n" + json.dumps(_proposal(), ensure_ascii=False) + "\n```"
 

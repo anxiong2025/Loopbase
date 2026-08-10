@@ -1,6 +1,6 @@
 # Loopbase
 
-**面向金融的开放智能体框架——工具即能力，证据即信任。**
+**专为懒人设计的旅行攻略 Agent——目标说清楚，剩下的交给循环。**
 
 让循环保持运转，让证据保持诚实。
 
@@ -11,10 +11,10 @@
 
 [路线图](ROADMAP.md) · [工程结构](STRUCTURE.md) · [English](README.md)
 
-Loopbase 是一个面向金融领域的开源 Agent Harness：以零强制依赖、与厂商无关的循环内核
-（`packages/kernel`）为基座，加上金融工具层（`packages/finance`）。它让 agent 的"思考—行动"
-循环可审查、可恢复：结构化工具、与厂商无关的模型接入、append-only 的证据日志。内核保持
-领域无关，旅行等其他领域以后可以随时接入，无需改动内核。
+Loopbase 是一个以旅行攻略为首个产品场景的开源 Agent Harness：底层是零强制依赖、与厂商无关的
+运行内核（`packages/kernel`），上层是旅行工具包（`packages/travel`）。用户只需要说明想去哪里、
+玩几天和预算，Agent 负责规划任务、查询资料、调用工具并整理成能直接照着走的攻略。内核只负责让
+Agent Runtime 稳定、可控地运行，不包含任何旅行领域逻辑。
 
 ## 为什么需要 Loopbase
 
@@ -51,7 +51,7 @@ Loopbase 不是：
 - 多 agent 图编排引擎——只留接口，Stage 8，尚未启动；
 - UI 或 iOS 客户端——那些是这个内核的下游使用方；
 - 托管服务或租户化服务；
-- 金融应用或荐股产品——Loopbase 是底下的 harness，领域逻辑在 `packages/finance`，内核保持领域无关。
+- 机票、酒店或门票预订平台——当前只做攻略规划和信息工具，不执行付款或下单。
 
 ## 快速体验
 
@@ -67,7 +67,7 @@ uv sync
 
 ```bash
 cp .env.example .env   # 填入 API key / base_url / model
-uv run examples/stage2_finance/demo.py
+uv run examples/stage2_travel/demo.py
 ```
 
 跑单元测试：
@@ -85,7 +85,10 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 | 模型客户端 | 厂商无关的 `ModelClient` 协议；已实现 OpenAI/DeepSeek 与 Anthropic 两种方言 |
 | 证据日志 | append-only JSONL，每条状态转移带 schema 版本、时间戳、唯一 id |
 | 结构化目标 | `goal/v1` 版本化数据，包含目标、成功标准、约束和上下文 |
+| 自然语言入口 | `/run` 将一句用户输入整理成 Goal；信息不足时返回必要追问 |
 | 任务规划 | LLM 提议任务；Runtime 分配 ID、校验依赖 DAG 并管理生命周期状态 |
+| 任务执行 | `TaskExecutor` 按依赖串行运行任务，传递结果并隔离失败分支 |
+| 旅行工具 | 天气、旅行地点资料、地点距离和确定性预算汇总 |
 | 配置 | 极简 `.env` 加载；密钥不进代码 |
 
 ## 路线图
@@ -93,7 +96,7 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | 0–1 | 最小 ReAct 循环、工具注册表、模型方言、证据日志 | ✅ 已完成（v0.1.0） |
-| 2 | 结构化目标与任务管理 | 🚧 目标与任务规划已完成；下一步重新规划 |
+| 2 | 结构化目标与任务管理 | 🚧 目标接入、规划和串行执行已完成；下一步重新规划 |
 | 3 | 并行与顺序依赖的多工具编排 | 计划中 |
 | 4 | 状态持久化、检查点恢复、来源标记 | 计划中 |
 | 5 | 上下文预算、压缩、记忆分层 | 计划中 |
@@ -117,7 +120,7 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 
 ```
 packages/kernel/   开源交付物：领域无关，只用标准库
-packages/travel/   旅行领域（第一个使用方，后续）
+packages/travel/   旅行攻略领域：工具、数据源适配器和领域 Prompt
 apps/              api / web / ios 客户端（下游使用方，后续）
 examples/          可运行的阶段 demo
 schemas/           语言中立的 JSON Schema（唯一真相源）
@@ -127,7 +130,7 @@ schemas/           语言中立的 JSON Schema（唯一真相源）
 
 ## 当前状态
 
-v0.1.0 + Stage 2 开发中——早期但可用的单 agent 循环内核。Stage 0–1 已完成；Stage 2 已具备结构化目标，以及由 LLM 提议、Runtime 校验的任务计划。下一步是任务自动执行和重新规划。它不是完整的 agent 平台，不是图引擎，也不是自主生产控制器。
+v0.1.0 + Stage 2 开发中——早期但可用的单 agent 循环内核。Stage 0–1 已完成；Stage 2 已具备自然语言目标接入、由 LLM 提议且经 Runtime 校验的任务计划，以及按依赖串行执行任务的 TaskExecutor。下一步是重新规划。它不是完整的 agent 平台，不是图引擎，也不是自主生产控制器。
 
 ## 参与贡献
 

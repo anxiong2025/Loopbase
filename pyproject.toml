@@ -2,14 +2,14 @@
 name = "loopbase-workspace"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = ["loopbase", "finance-agent"]
+dependencies = ["loopbase", "travel-agent"]
 
 [tool.uv.workspace]
 members = ["packages/*", "apps/api"]
 
 [tool.uv.sources]
 loopbase = { workspace = true }
-finance-agent = { workspace = true }
+travel-agent = { workspace = true }
 
 [tool.ruff]
 target-version = "py314"

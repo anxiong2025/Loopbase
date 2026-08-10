@@ -26,7 +26,7 @@ Stage 0-7 是内核要做的部分，Stage 8 是内核之外的编排层，暂�
 
 ## Stage 0 — ReAct 核心循环（已完成）
 
-对应文件：[examples/stage2_finance/demo.py](examples/stage2_finance/demo.py)（金融领域，真实模型，打印每次请求/响应）
+对应文件：[examples/stage2_travel/demo.py](examples/stage2_travel/demo.py)（旅行攻略领域，真实模型，打印每次请求/响应）
 
 已具备：工具定义（JSON Schema）+ 每轮携带、`tool_calls` 解析与回填、`finish_reason`/`stop_reason` 终止判断、
 双方言对照（OpenAI/DeepSeek vs Anthropic）、熔断、执行报错回填不 crash、`.env` 密钥加载（配置层的最简版）。
@@ -44,12 +44,14 @@ Stage 0-7 是内核要做的部分，Stage 8 是内核之外的编排层，暂�
 ## Stage 2 — 目标与任务管理
 
 - ✅ **结构化目标表示**：`Goal` 以 `goal/v1` 数据契约保存目标、成功标准、约束和上下文；循环只接受结构化目标
+- ✅ **自然语言目标接入**：把用户原始输入整理为 Goal；缺少关键条件时返回澄清问题，不擅自编造约束
 - ✅ **任务分解与状态跟踪**：`TaskPlanner` 让 LLM 提议任务和依赖，Runtime 分配 ID、校验 DAG，并管理任务状态机
+- ✅ **任务串行执行**：`TaskExecutor` 选择依赖已满足的任务，交给 ReActLoop 执行，保存结果并更新后续任务状态
 - 计划中 **重新规划触发条件**：什么样的新证据出现时，需要回头修改任务分解，而不是硬着头皮按原计划走
 
-当前进度：Stage 2.1–2.2 已完成。结构化目标会进入 `RunResult` 和证据日志；LLM 可以通过 `TaskPlanner` 提议
+当前进度：Stage 2.1–2.4 已完成。自然语言请求可以先整理为结构化 Goal；Goal 会进入 `RunResult` 和证据日志；LLM 可以通过 `TaskPlanner` 提议
 任务清单，Runtime 负责生成 `task-plan/v1`、校验依赖和控制 pending/in_progress/completed/failed/blocked
-状态转换。任务自动执行与重新规划尚未实现。
+状态转换；`TaskExecutor` 已能串行执行就绪任务、传递直接依赖的结果，并在失败后阻塞下游任务。重新规划尚未实现。
 
 完成标准：给定一个目标，能看到它被拆成的子任务列表和状态变化；中途注入一个改变结论的新事实，能观察到
 任务列表被相应调整，而不是被忽略。

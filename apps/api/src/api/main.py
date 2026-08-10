@@ -1,4 +1,4 @@
-"""Loopbase Finance API：把金融 Agent 循环暴露成 HTTP 接口 + 浏览器页面。
+"""Loopbase Travel API：把旅行攻略 Agent Runtime 暴露成 HTTP 接口。
 
 本地启动：
     uv sync
@@ -27,23 +27,27 @@ from typing import Any, Literal, Self
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
-from finance_agent import market_data, sec_edgar
-from finance_agent.tools import register_all
 from loopbase import (
     Goal,
+    GoalIntake,
+    IntakeGenerationError,
+    IntakeStatus,
     JsonlEvidenceLog,
     OpenAICompatibleClient,
     PlanGenerationError,
     ReActLoop,
+    TaskExecutor,
     TaskPlanner,
     ToolRegistry,
 )
 from loopbase.config import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from travel_agent import build_system_prompt
+from travel_agent.tools import register_all
 
 load_dotenv()  # 本地读取根目录 .env；容器里用环境变量传入
 
-app = FastAPI(title="Loopbase Finance API", version="0.1.0")
+app = FastAPI(title="Loopbase Travel API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,10 +56,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SYSTEM_PROMPT = (
-    "你是金融分析助手。查询数据后用中文简要分析，"
-    "并注明数据仅供参考，不构成投资建议。"
-)
+SYSTEM_PROMPT = build_system_prompt()
 
 _INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_text(
     encoding="utf-8"
@@ -63,10 +64,7 @@ _INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_text(
 
 
 class _TTLCache:
-    """极简内存 TTL 缓存：保护 Alpha Vantage 每日 25 次的免费额度。
-
-    仪表盘页面刷新、追问、多个用户看同一只票，都不应该重复消耗额度。
-    """
+    """极简内存 TTL 缓存，避免重复运行相同旅行目标。"""
 
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl = ttl_seconds
@@ -90,8 +88,6 @@ class _TTLCache:
         return value
 
 
-_overview_cache = _TTLCache(ttl_seconds=6 * 3600)
-_citations_cache = _TTLCache(ttl_seconds=6 * 3600)
 _report_cache = _TTLCache(ttl_seconds=6 * 3600)
 
 
@@ -128,6 +124,26 @@ class PlanRequest(BaseModel):
 
     goal: GoalRequest
     max_tasks: int = Field(default=12, ge=1, le=30)
+    include_raw_response: bool = False
+
+
+class PlanAndExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    goal: GoalRequest
+    max_tasks: int = Field(default=12, ge=1, le=30)
+    max_turns: int = Field(default=5, ge=1, le=20)
+    include_raw_response: bool = False
+
+
+class PromptRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str = Field(min_length=1)
+    max_questions: int = Field(default=3, ge=1, le=5)
+    max_tasks: int = Field(default=12, ge=1, le=30)
+    max_turns: int = Field(default=5, ge=1, le=20)
+    include_raw_response: bool = False
 
 
 def _build_client() -> OpenAICompatibleClient:
@@ -196,12 +212,80 @@ def plan_tasks(request: PlanRequest) -> dict:
     """让模型提议任务清单，再由 Runtime 生成并校验 TaskPlan。"""
     try:
         planner = TaskPlanner(client=_build_client(), max_tasks=request.max_tasks)
-        plan = planner.plan(request.goal.to_domain())
+        result = planner.plan_with_trace(request.goal.to_domain())
     except PlanGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return plan.as_dict()
+    if request.include_raw_response:
+        return {
+            "raw_model_response": result.raw_response_as_dict(),
+            "task_plan": result.plan.as_dict(),
+        }
+    return result.plan.as_dict()
+
+
+@app.post("/plan-and-execute")
+def plan_and_execute(request: PlanAndExecuteRequest) -> dict:
+    """先由 LLM 规划，再按依赖将每个任务交给 ReActLoop 串行执行。"""
+    goal = request.goal.to_domain()
+    try:
+        planning = TaskPlanner(
+            client=_build_client(),
+            max_tasks=request.max_tasks,
+        ).plan_with_trace(goal)
+        execution = TaskExecutor(
+            runner=_build_loop(request.max_turns)
+        ).execute(goal, planning.plan)
+    except PlanGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    response = {"execution": execution.as_dict()}
+    if request.include_raw_response:
+        response["raw_planner_response"] = planning.raw_response_as_dict()
+    return response
+
+
+@app.post("/run")
+def run_prompt(request: PromptRunRequest) -> dict:
+    """一句自然语言完成目标整理、任务规划和串行执行。"""
+    try:
+        client = _build_client()
+        intake = GoalIntake(
+            client=client,
+            max_questions=request.max_questions,
+        ).intake(request.prompt)
+        if intake.status is IntakeStatus.NEEDS_CLARIFICATION:
+            response = intake.as_dict()
+            if request.include_raw_response:
+                response["raw_intake_response"] = intake.raw_response_as_dict()
+            return response
+
+        if intake.goal is None:  # pragma: no cover - guarded by IntakeStatus contract
+            raise RuntimeError("goal intake returned ready without a goal")
+        planning = TaskPlanner(
+            client=client,
+            max_tasks=request.max_tasks,
+        ).plan_with_trace(intake.goal)
+        execution = TaskExecutor(
+            runner=_build_loop(request.max_turns)
+        ).execute(intake.goal, planning.plan)
+    except (IntakeGenerationError, PlanGenerationError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    response = {
+        "status": execution.status.value,
+        "intake": intake.as_dict(),
+        "execution": execution.as_dict(),
+    }
+    if request.include_raw_response:
+        response["raw_intake_response"] = intake.raw_response_as_dict()
+        response["raw_planner_response"] = planning.raw_response_as_dict()
+    return response
 
 
 @app.get("/config")
@@ -221,8 +305,7 @@ def config() -> dict:
 async def analyze_stream(request: AnalyzeRequest) -> StreamingResponse:
     """SSE：把 agent 循环的每一步（轮次/工具调用/结果）实时推给前端。
 
-    同一个问题（比如仪表盘的评分 prompt，每次对同一只票文本都完全一样）
-    缓存 6 小时——刷新页面不该重新跑一遍真实的 LLM + 工具调用。
+    同一个旅行目标缓存 6 小时，重复请求不重新跑一遍真实的 LLM + 工具调用。
     force_refresh 可以绕过缓存强制重新生成。
     """
     goal = request.goal.to_domain()
@@ -277,46 +360,3 @@ async def analyze_stream(request: AnalyzeRequest) -> StreamingResponse:
                 break
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
-
-
-@app.get("/stock/{ticker}/overview")
-def stock_overview(ticker: str) -> dict:
-    """结构化的实时行情 + 核心基本面（仪表盘头部用），带 6 小时缓存。"""
-    try:
-        return _overview_cache.get_or_set(
-            ticker.upper(), lambda: market_data.fetch_overview(ticker)
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
-@app.get("/stock/{ticker}/citations")
-def stock_citations(ticker: str) -> dict:
-    """SEC EDGAR 溯源：真实财报科目 + 可点击的原始申报文件链接，带 6 小时缓存。"""
-    try:
-        return _citations_cache.get_or_set(
-            ticker.upper(), lambda: sec_edgar.citations(ticker)
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
-@app.get("/stock/peers")
-def stock_peers(tickers: str) -> dict:
-    """同行对比：多只股票的结构化基本面，逐个取，单只失败不影响其余。"""
-    symbols = [t.strip().upper() for t in tickers.split(",") if t.strip()]
-    if not symbols:
-        raise HTTPException(status_code=400, detail="tickers 不能为空，例如 ?tickers=NVDA,AMD,INTC")
-    if len(symbols) > 6:
-        raise HTTPException(status_code=400, detail="一次最多对比 6 只，避免打光每日额度")
-
-    peers = []
-    for symbol in symbols:
-        try:
-            data = _overview_cache.get_or_set(
-                symbol, lambda symbol=symbol: market_data.fetch_overview(symbol)
-            )
-            peers.append(data)
-        except RuntimeError as exc:
-            peers.append({"symbol": symbol, "warnings": [str(exc)], "error": True})
-    return {"peers": peers}

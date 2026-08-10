@@ -1,9 +1,9 @@
 [project]
 name = "api"
 version = "0.1.0"
-description = "HTTP 服务：把 Loopbase 金融 Agent 循环暴露给浏览器"
+description = "HTTP 服务：把 Loopbase 旅行攻略 Agent Runtime 暴露为 API"
 requires-python = ">=3.14"
-dependencies = ["fastapi", "uvicorn", "loopbase", "finance-agent"]
+dependencies = ["fastapi", "uvicorn", "loopbase", "travel-agent"]
 
 [build-system]
 requires = ["hatchling"]
@@ -14,4 +14,4 @@ packages = ["src/api"]
 
 [tool.uv.sources]
 loopbase = { workspace = true }
-finance-agent = { workspace = true }
+travel-agent = { workspace = true }
