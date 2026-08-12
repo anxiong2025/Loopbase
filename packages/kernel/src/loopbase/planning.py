@@ -10,6 +10,8 @@ from typing import Any
 
 from .goals import Goal
 from .models.base import Message, ModelClient
+from .observability import Actor, EventKind
+from .state import EvidenceLog
 from .tasks import Task, TaskPlan
 
 
@@ -53,11 +55,18 @@ class TaskPlanner:
     status to ``pending``, and rejects malformed or cyclic plans.
     """
 
-    def __init__(self, *, client: ModelClient, max_tasks: int = 12) -> None:
+    def __init__(
+        self,
+        *,
+        client: ModelClient,
+        max_tasks: int = 12,
+        evidence_log: EvidenceLog | None = None,
+    ) -> None:
         if isinstance(max_tasks, bool) or not isinstance(max_tasks, int) or max_tasks < 1:
             raise ValueError("max_tasks must be a positive integer")
         self.client = client
         self.max_tasks = max_tasks
+        self.evidence_log = evidence_log
 
     def plan(self, goal: Goal) -> TaskPlan:
         return self.plan_with_trace(goal).plan
@@ -67,6 +76,7 @@ class TaskPlanner:
 
         if not isinstance(goal, Goal):
             raise TypeError("goal must be a Goal")
+        start_event = self._log(EventKind.PLAN_START, {"goal": goal.as_dict()})
         messages = [
             Message(role="system", content=self._system_prompt()),
             Message(
@@ -75,11 +85,29 @@ class TaskPlanner:
                 + json.dumps(goal.model_payload(), ensure_ascii=False, indent=2),
             ),
         ]
-        response = self.client.complete(messages, [])
-        if response.finish_reason != "stop" or response.message.tool_calls:
-            raise PlanGenerationError("planner must return one final JSON response")
-        proposal = _parse_json_object(response.message.content)
-        plan = self._build_plan(goal, proposal)
+        try:
+            response = self.client.complete(messages, [])
+            if response.finish_reason != "stop" or response.message.tool_calls:
+                raise PlanGenerationError("planner must return one final JSON response")
+            proposal = _parse_json_object(response.message.content)
+            plan = self._build_plan(goal, proposal)
+        except Exception as exc:
+            self._log(
+                EventKind.PLAN_FAILED,
+                {
+                    "goal_id": goal.id,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+                caused_by=start_event,
+            )
+            raise
+
+        self._log(
+            EventKind.PLAN_CREATED,
+            {"task_plan": plan.as_dict()},
+            caused_by=start_event,
+        )
         return PlanningResult(
             plan=plan,
             raw_model_content=response.message.content,
@@ -87,6 +115,19 @@ class TaskPlanner:
             usage=response.usage,
             provider_response=response.raw,
         )
+
+    def _log(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        caused_by: str | None = None,
+    ) -> str | None:
+        if self.evidence_log is None:
+            return None
+        return self.evidence_log.append(
+            kind, payload, actor=Actor.PLANNER, caused_by=caused_by
+        ).id
 
     def _system_prompt(self) -> str:
         return f"""You are a task planner inside an agent runtime.

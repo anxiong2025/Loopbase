@@ -50,7 +50,7 @@ def _task(
 class SuccessfulRunner:
     goals: list[Goal] = field(default_factory=list)
 
-    def run(self, goal: Goal) -> RunResult:
+    def run(self, goal: Goal, *, caused_by: str | None = None) -> RunResult:
         self.goals.append(goal)
         return RunResult(
             final_answer=f"已完成：{goal.objective.splitlines()[0]}",
@@ -94,7 +94,7 @@ def test_executor_runs_tasks_in_dependency_order_and_passes_results() -> None:
 
 def test_executor_marks_max_turn_task_failed_and_dependents_blocked() -> None:
     class MaxTurnRunner:
-        def run(self, goal: Goal) -> RunResult:
+        def run(self, goal: Goal, *, caused_by: str | None = None) -> RunResult:
             return RunResult(
                 final_answer=None,
                 turns=3,
@@ -123,7 +123,7 @@ def test_executor_marks_max_turn_task_failed_and_dependents_blocked() -> None:
 
 def test_executor_continues_an_independent_branch_after_failure() -> None:
     class BranchRunner:
-        def run(self, goal: Goal) -> RunResult:
+        def run(self, goal: Goal, *, caused_by: str | None = None) -> RunResult:
             if goal.id == "broken":
                 raise RuntimeError("tool unavailable")
             return RunResult(

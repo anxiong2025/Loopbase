@@ -7,7 +7,14 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from loopbase import Goal, Message, ModelResponse, RunResult
+from loopbase import (
+    Goal,
+    JsonlEvidenceLog,
+    Message,
+    ModelResponse,
+    RunResult,
+    replay_run,
+)
 
 from api import main
 from api.main import (
@@ -161,7 +168,7 @@ def test_plan_and_execute_endpoint_runs_the_validated_plan(monkeypatch) -> None:
             )
 
     class Runner:
-        def run(self, goal: Goal) -> RunResult:
+        def run(self, goal: Goal, *, caused_by: str | None = None) -> RunResult:
             return RunResult(
                 final_answer="任务执行结果",
                 turns=2,
@@ -171,7 +178,9 @@ def test_plan_and_execute_endpoint_runs_the_validated_plan(monkeypatch) -> None:
             )
 
     monkeypatch.setattr(main, "_build_client", lambda: PlannerClient())
-    monkeypatch.setattr(main, "_build_loop", lambda max_turns: Runner())
+    monkeypatch.setattr(
+        main, "_build_loop", lambda max_turns, **kwargs: Runner()
+    )
     request = PlanAndExecuteRequest.model_validate(
         {
             "goal": {"objective": "完成一个需要工具的目标"},
@@ -245,7 +254,7 @@ def test_run_endpoint_accepts_one_natural_language_prompt(monkeypatch) -> None:
             )
 
     class Runner:
-        def run(self, goal: Goal) -> RunResult:
+        def run(self, goal: Goal, *, caused_by: str | None = None) -> RunResult:
             return RunResult(
                 final_answer="深圳三日攻略",
                 turns=2,
@@ -255,7 +264,9 @@ def test_run_endpoint_accepts_one_natural_language_prompt(monkeypatch) -> None:
 
     client = Client()
     monkeypatch.setattr(main, "_build_client", lambda: client)
-    monkeypatch.setattr(main, "_build_loop", lambda max_turns: Runner())
+    monkeypatch.setattr(
+        main, "_build_loop", lambda max_turns, **kwargs: Runner()
+    )
     request = PromptRunRequest.model_validate(
         {"prompt": "深圳旅行攻略3天2夜，预算5000"}
     )
@@ -296,3 +307,82 @@ def test_run_endpoint_returns_clarification_without_planning(monkeypatch) -> Non
     assert response["status"] == "needs_clarification"
     assert response["goal"] is None
     assert response["questions"] == ["你想去哪个城市？"]
+
+
+def test_run_endpoint_writes_one_auditable_run_to_the_evidence_log(
+    monkeypatch, tmp_path
+) -> None:
+    """一次 /run 请求在日志里必须是**一条**运行，intake/planner/executor 共享 run_id。
+
+    分别 new 各自的 log 时每个组件写自己的 run_id，事后没法把一次会话还原出来——
+    这条测试守的就是那个接线。
+    """
+
+    class Client:
+        calls = 0
+
+        def complete(self, messages, tools):
+            self.calls += 1
+            content = (
+                {
+                    "objective": "制定深圳3天攻略",
+                    "success_criteria": ["给出三天每日行程"],
+                    "constraints": [],
+                    "context": {"destination_city": "深圳", "days": 3},
+                    "missing_information": [],
+                    "questions": [],
+                }
+                if self.calls == 1
+                else {
+                    "tasks": [
+                        {
+                            "key": "guide",
+                            "title": "制定旅行攻略",
+                            "description": "制定深圳三天每日安排",
+                            "depends_on": [],
+                            "completion_criteria": ["输出三天行程"],
+                        }
+                    ]
+                }
+            )
+            return ModelResponse(
+                message=Message(
+                    role="assistant",
+                    content=json.dumps(content, ensure_ascii=False),
+                ),
+                finish_reason="stop",
+            )
+
+    class Runner:
+        def run(self, goal: Goal, *, caused_by: str | None = None) -> RunResult:
+            return RunResult(
+                final_answer="深圳三日攻略",
+                turns=1,
+                goal=goal,
+                stopped_by="model",
+            )
+
+    monkeypatch.setenv("LOOPBASE_EVIDENCE_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "_build_client", lambda: Client())
+    monkeypatch.setattr(main, "_build_loop", lambda max_turns, **kwargs: Runner())
+
+    main.run_prompt(PromptRunRequest.model_validate({"prompt": "深圳旅行攻略3天"}))
+
+    records = JsonlEvidenceLog(tmp_path / "evidence_api.jsonl").read_all()
+    assert len({record.run_id for record in records}) == 1
+    assert [record.kind for record in records] == [
+        "intake.start",
+        "intake.completed",
+        "plan.start",
+        "plan.created",
+        "execution.start",
+        "task.started",
+        "task.completed",
+        "execution.finished",
+    ]
+    assert {record.actor for record in records} == {"intake", "planner", "executor"}
+
+    # 只凭日志复算，得出跟接口返回一样的结论
+    replayed = replay_run(records)
+    assert replayed.finished is True
+    assert list(replayed.outputs.values()) == ["深圳三日攻略"]

@@ -7,7 +7,7 @@ Keep the loop moving. Keep the evidence honest.
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.14+-blue)](pyproject.toml)
 [![Dependencies](https://img.shields.io/badge/dependencies-stdlib%20only-brightgreen)](packages/kernel/pyproject.toml)
-[![Status](https://img.shields.io/badge/status-Stage%202%20in%20progress-orange)](ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-Stage%204%20done-orange)](ROADMAP.md)
 
 [Roadmap](ROADMAP.md) · [Structure](STRUCTURE.md) · [简体中文](README.zh-CN.md)
 
@@ -84,7 +84,10 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 | ReAct loop | Runs model ↔ tool turns until the model answers or max turns is reached |
 | Tool registry | JSON-Schema tool definitions with runtime registration; errors feed back to the model |
 | Model clients | Provider-neutral `ModelClient` protocol; OpenAI/DeepSeek and Anthropic dialects |
-| Evidence log | Append-only JSONL with schema version, timestamp, and id per state transition |
+| Evidence log | Append-only JSONL covering intake, planning, task lifecycle, and every loop turn |
+| Provenance | Each event carries `run_id`, `actor`, and `caused_by`, so one run is auditable end to end |
+| Durable state | `Store` protocol with an fsync-ing JSONL default; unknown event schema versions are rejected, not guessed |
+| Replay and resume | `replay_run()` rebuilds goal, plan, and outputs from the log; `TaskExecutor.resume()` continues from there |
 | Structured goals | Versioned `goal/v1` data with objective, success criteria, constraints, and context |
 | Natural-language intake | `/run` turns one user prompt into a Goal or returns only blocking clarification questions |
 | Task planning | Model-proposed tasks; runtime-owned ids, dependency DAG validation, and lifecycle states |
@@ -97,9 +100,9 @@ uv run --project packages/kernel --extra dev pytest packages/kernel/tests/unit -
 | Stage | What | Status |
 |---|---|---|
 | 0–1 | Minimal ReAct loop, tool registry, model dialects, evidence log | ✅ done (v0.1.0) |
-| 2 | Structured goals and task management | 🚧 intake, planning, and serial execution done; replanning next |
+| 2 | Structured goals and task management | 🚧 intake, planning, and serial execution done; replanning open |
 | 3 | Parallel and dependent multi-tool orchestration | planned |
-| 4 | Persistent state, checkpoint recovery, provenance | planned |
+| 4 | Persistent state, replay/resume, provenance | ✅ done |
 | 5 | Context budget, compression, memory layers | planned |
 | 6 | Quota-aware lifecycle and resume | planned |
 | 7 | Verifiable handoffs | planned |
@@ -131,7 +134,9 @@ See [STRUCTURE.md](STRUCTURE.md) for the full contract.
 
 ## Current status
 
-v0.1.0 plus Stage 2 development — early but usable single-agent loop kernel. Stages 0–1 are complete; Stage 2 now has natural-language goal intake, model-proposed/runtime-validated task plans, and serial dependency-aware task execution through the ReAct loop. Replanning is next. It is not a full agent platform, not a graph engine, and not an autonomous production controller.
+v0.1.0 plus Stage 2 and Stage 4 — early but usable single-agent loop kernel. Stages 0–1 are complete. Stage 2 has natural-language goal intake, model-proposed/runtime-validated task plans, and serial dependency-aware task execution. Stage 4 is complete: every state transition is recorded with provenance, and a run killed with `SIGKILL` mid-plan can be rebuilt from its log and resumed — a real kill-9 subprocess test covers this. Stage 4 was pulled ahead of replanning on purpose, since replanning is defined as changing a plan in response to evidence.
+
+Remaining near-term work: Stage 2.5 replanning and Stage 3 parallel tool calls. It is not a full agent platform, not a graph engine, and not an autonomous production controller.
 
 ## Contributing
 

@@ -3,6 +3,10 @@
 Stage 0-7 是内核要做的部分，Stage 8 是内核之外的编排层，暂不启动。整体定位、范围边界和设计原则见
 [README.md](README.md)。
 
+**实际推进顺序**：0 → 1 → 2.1-2.4 → **4** → (2.5 重新规划 / 3 多工具编排)。Stage 4 被提前是因为
+2.5「根据新证据改计划」的输入就是证据、输出是计划修订版；证据层残缺时做 2.5，等于没有 diff 就改文件，
+Stage 2 的完成标准也无法回放验证。
+
 ## 模块全景图
 
 12 个模块层，每层标注对应哪个 Stage：
@@ -65,15 +69,27 @@ Stage 0-7 是内核要做的部分，Stage 8 是内核之外的编排层，暂�
 完成标准：一个"查航班 → 查天气 → 建议行程"的真实多步查询，能在若干轮内正确收敛，该并行的并行、该顺序的顺序，
 单个工具失败不影响其他并行分支。
 
-## Stage 4 — 持久化状态 / 证据日志
+## Stage 4 — 持久化状态 / 证据日志（已完成）
 
-- **Append-only 事件日志**（JSONL）：每个状态转移是不可变事实记录
-- **会话可恢复**：从磁盘重新加载续跑
-- **来源标记（provenance）**：每条事件记录谁产生的、依据什么调用的
-- **状态 schema 版本化**：日志/检查点格式带版本号，内核升级后旧文件不会被新代码悄悄读错
+- ✅ **Append-only 事件日志**（JSONL）：每个状态转移是不可变事实记录，契约见
+  [schemas/v1/event.schema.json](schemas/v1/event.schema.json)
+- ✅ **落盘引擎抽象**：`state.Store` 协议 + `JsonlStore`（每次追加 fsync）/ `MemoryStore` 两个实现，
+  就是 STRUCTURE.md 里点名的第一个 Rust 接缝
+- ✅ **来源标记（provenance）**：每条事件带 `run_id`（哪次运行）、`actor`（intake / planner / executor /
+  loop 哪个组件写的）、`caused_by`（触发它的事件 id）。埋点覆盖 intake、planner、任务生命周期和 ReAct 内层循环
+- ✅ **会话可恢复**：`replay_run()` 只凭事件序列重建 Goal / TaskPlan / 已完成任务产出，
+  `TaskExecutor.resume()` 从重建结果接着跑
+- ✅ **状态 schema 版本化**：读到不认识的 `event/vN` 明确抛 `EvidenceSchemaMismatch`，不静默读错
+
+**中断任务的语义**：进程被杀时停在 `in_progress` 的任务，重放保持 `in_progress`（审计要看到真实的最后状态），
+续跑时走 `in_progress → failed → pending` 整个重跑。不做半个任务的续跑——ReAct 循环内部没有中途检查点，
+重放不出「工具调了一半」的状态。代价是那个任务里已执行的工具会再执行一次；当前工具都是只读查询所以安全，
+有副作用的工具要等 Stage 10 策略层来管。
 
 完成标准：跑到一半 kill 进程，重启后正确接着跑；只看日志文件不看代码也能审出会话做了什么；换一个内核版本
 读旧日志，能明确识别版本不匹配而不是静默出错。
+→ 由 [tests/recovery/test_kill_and_resume.py](packages/kernel/tests/recovery/test_kill_and_resume.py)
+（真 SIGKILL 子进程）和 [tests/unit/test_instrumentation.py](packages/kernel/tests/unit/test_instrumentation.py) 守住。
 
 ## Stage 5 — 上下文与记忆管理
 

@@ -9,6 +9,8 @@ from typing import Any
 
 from .goals import Goal
 from .models.base import Message, ModelClient
+from .observability import Actor, EventKind
+from .state import EvidenceLog
 
 INTAKE_RESULT_SCHEMA_VERSION = "intake-result/v1"
 
@@ -57,7 +59,13 @@ class GoalIntakeResult:
 class GoalIntake:
     """Turn one user prompt into a validated Goal or a small clarification set."""
 
-    def __init__(self, *, client: ModelClient, max_questions: int = 3) -> None:
+    def __init__(
+        self,
+        *,
+        client: ModelClient,
+        max_questions: int = 3,
+        evidence_log: EvidenceLog | None = None,
+    ) -> None:
         if (
             isinstance(max_questions, bool)
             or not isinstance(max_questions, int)
@@ -66,11 +74,13 @@ class GoalIntake:
             raise ValueError("max_questions must be between 1 and 5")
         self.client = client
         self.max_questions = max_questions
+        self.evidence_log = evidence_log
 
     def intake(self, prompt: str) -> GoalIntakeResult:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
         user_prompt = prompt.strip()
+        start_event = self._log(EventKind.INTAKE_START, {"prompt": user_prompt})
         messages = [
             Message(role="system", content=self._system_prompt()),
             Message(
@@ -78,23 +88,33 @@ class GoalIntake:
                 content="Convert this user request into a goal draft:\n" + user_prompt,
             ),
         ]
-        response = self.client.complete(messages, [])
-        if response.finish_reason != "stop" or response.message.tool_calls:
-            raise IntakeGenerationError("goal intake must return one final JSON response")
-        proposal = _parse_json_object(response.message.content)
-        draft, missing, questions = self._validate_proposal(proposal, user_prompt)
+        try:
+            response = self.client.complete(messages, [])
+            if response.finish_reason != "stop" or response.message.tool_calls:
+                raise IntakeGenerationError(
+                    "goal intake must return one final JSON response"
+                )
+            proposal = _parse_json_object(response.message.content)
+            draft, missing, questions = self._validate_proposal(proposal, user_prompt)
 
-        status = (
-            IntakeStatus.NEEDS_CLARIFICATION if missing else IntakeStatus.READY
-        )
-        goal = None
-        if status is IntakeStatus.READY:
-            try:
-                goal = Goal(**draft)
-            except (TypeError, ValueError) as exc:
-                raise IntakeGenerationError(f"invalid goal draft: {exc}") from exc
+            status = (
+                IntakeStatus.NEEDS_CLARIFICATION if missing else IntakeStatus.READY
+            )
+            goal = None
+            if status is IntakeStatus.READY:
+                try:
+                    goal = Goal(**draft)
+                except (TypeError, ValueError) as exc:
+                    raise IntakeGenerationError(f"invalid goal draft: {exc}") from exc
+        except Exception as exc:
+            self._log(
+                EventKind.INTAKE_FAILED,
+                {"error": str(exc), "error_type": type(exc).__name__},
+                caused_by=start_event,
+            )
+            raise
 
-        return GoalIntakeResult(
+        result = GoalIntakeResult(
             status=status,
             goal=goal,
             goal_draft=draft,
@@ -105,6 +125,27 @@ class GoalIntake:
             usage=response.usage,
             provider_response=response.raw,
         )
+        self._log(
+            EventKind.INTAKE_COMPLETED
+            if status is IntakeStatus.READY
+            else EventKind.INTAKE_NEEDS_CLARIFICATION,
+            {"result": result.as_dict()},
+            caused_by=start_event,
+        )
+        return result
+
+    def _log(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        caused_by: str | None = None,
+    ) -> str | None:
+        if self.evidence_log is None:
+            return None
+        return self.evidence_log.append(
+            kind, payload, actor=Actor.INTAKE, caused_by=caused_by
+        ).id
 
     def _system_prompt(self) -> str:
         return f"""You are the goal-intake layer for a lazy-friendly travel agent.

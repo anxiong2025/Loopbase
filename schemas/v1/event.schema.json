@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loopbase.dev/schemas/v1/event.schema.json",
+  "title": "Loopbase Event v1",
+  "description": "One immutable line in the append-only evidence log. Every state transition writes one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "run_id",
+    "actor",
+    "caused_by",
+    "kind",
+    "payload",
+    "timestamp"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "event/v1"
+    },
+    "id": {
+      "description": "Unique id of this event; other events reference it through caused_by.",
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "description": "Identity of the run that produced this event. One log file may hold several runs.",
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "description": "Which kernel component wrote this event.",
+      "type": "string",
+      "enum": ["intake", "planner", "executor", "loop", "kernel", "unknown"]
+    },
+    "caused_by": {
+      "description": "Id of the event that triggered this one; null for the root event of a run.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "kind": {
+      "description": "Event type, e.g. goal.start / model.response / tool.call.",
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object"
+    },
+    "timestamp": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

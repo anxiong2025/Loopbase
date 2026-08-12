@@ -161,21 +161,31 @@ def _build_client() -> OpenAICompatibleClient:
     )
 
 
+def _build_evidence_log() -> JsonlEvidenceLog:
+    """一次请求一个 run_id。
+
+    intake / planner / executor / loop 共用同一个 log，事件才串得成一条链——
+    分别 new 一个的话每个组件各写各的 run_id，日志就没法还原一次完整会话了。
+    """
+    evidence_dir = Path(os.environ.get("LOOPBASE_EVIDENCE_DIR", "/tmp"))
+    return JsonlEvidenceLog(evidence_dir / "evidence_api.jsonl")
+
+
 def _build_loop(
     max_turns: int,
     on_event: Callable[[str, dict[str, Any]], None] | None = None,
+    evidence_log: JsonlEvidenceLog | None = None,
 ) -> ReActLoop:
     """按当前配置构建一次独立的 agent 循环（每次请求新注册工具，避免共享状态）。"""
     tools = ToolRegistry()
     register_all(tools)
 
-    evidence_dir = Path(os.environ.get("LOOPBASE_EVIDENCE_DIR", "/tmp"))
     return ReActLoop(
         client=_build_client(),
         tools=tools,
         max_turns=max_turns,
         system_prompt=SYSTEM_PROMPT,
-        evidence_log=JsonlEvidenceLog(evidence_dir / "evidence_api.jsonl"),
+        evidence_log=evidence_log or _build_evidence_log(),
         on_event=on_event,
     )
 
@@ -229,13 +239,16 @@ def plan_tasks(request: PlanRequest) -> dict:
 def plan_and_execute(request: PlanAndExecuteRequest) -> dict:
     """先由 LLM 规划，再按依赖将每个任务交给 ReActLoop 串行执行。"""
     goal = request.goal.to_domain()
+    evidence_log = _build_evidence_log()
     try:
         planning = TaskPlanner(
             client=_build_client(),
             max_tasks=request.max_tasks,
+            evidence_log=evidence_log,
         ).plan_with_trace(goal)
         execution = TaskExecutor(
-            runner=_build_loop(request.max_turns)
+            runner=_build_loop(request.max_turns, evidence_log=evidence_log),
+            evidence_log=evidence_log,
         ).execute(goal, planning.plan)
     except PlanGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -251,11 +264,13 @@ def plan_and_execute(request: PlanAndExecuteRequest) -> dict:
 @app.post("/run")
 def run_prompt(request: PromptRunRequest) -> dict:
     """一句自然语言完成目标整理、任务规划和串行执行。"""
+    evidence_log = _build_evidence_log()
     try:
         client = _build_client()
         intake = GoalIntake(
             client=client,
             max_questions=request.max_questions,
+            evidence_log=evidence_log,
         ).intake(request.prompt)
         if intake.status is IntakeStatus.NEEDS_CLARIFICATION:
             response = intake.as_dict()
@@ -268,9 +283,11 @@ def run_prompt(request: PromptRunRequest) -> dict:
         planning = TaskPlanner(
             client=client,
             max_tasks=request.max_tasks,
+            evidence_log=evidence_log,
         ).plan_with_trace(intake.goal)
         execution = TaskExecutor(
-            runner=_build_loop(request.max_turns)
+            runner=_build_loop(request.max_turns, evidence_log=evidence_log),
+            evidence_log=evidence_log,
         ).execute(intake.goal, planning.plan)
     except (IntakeGenerationError, PlanGenerationError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

@@ -24,27 +24,52 @@ from .models import (
     ToolCall,
     ToolSpec,
 )
-from .observability import JsonlEvidenceLog
+from .observability import (
+    EVENT_SCHEMA_VERSION,
+    Actor,
+    EventKind,
+    EvidenceRecord,
+)
 from .planning import PlanGenerationError, PlanningResult, TaskPlanner
+from .state import (
+    EvidenceLog,
+    EvidenceSchemaMismatch,
+    JsonlEvidenceLog,
+    JsonlStore,
+    MemoryStore,
+    ReplayedRun,
+    ReplayError,
+    Store,
+    replay_run,
+)
 from .tasks import TASK_PLAN_SCHEMA_VERSION, Task, TaskPlan, TaskStatus
 from .tools import RegisteredTool, ToolRegistry
 
 __version__ = "0.1.0"
 
 __all__ = [
-    "AnthropicClient",
+    "EVENT_SCHEMA_VERSION",
     "EXECUTION_RESULT_SCHEMA_VERSION",
+    "GOAL_SCHEMA_VERSION",
+    "INTAKE_RESULT_SCHEMA_VERSION",
+    "TASK_PLAN_SCHEMA_VERSION",
+    "Actor",
+    "AnthropicClient",
+    "EventKind",
+    "EvidenceLog",
+    "EvidenceRecord",
+    "EvidenceSchemaMismatch",
     "ExecutionResult",
     "ExecutionStatus",
-    "GOAL_SCHEMA_VERSION",
     "Goal",
     "GoalIntake",
     "GoalIntakeResult",
     "GoalRunner",
-    "INTAKE_RESULT_SCHEMA_VERSION",
     "IntakeGenerationError",
     "IntakeStatus",
     "JsonlEvidenceLog",
+    "JsonlStore",
+    "MemoryStore",
     "Message",
     "ModelClient",
     "ModelResponse",
@@ -53,8 +78,10 @@ __all__ = [
     "PlanningResult",
     "ReActLoop",
     "RegisteredTool",
+    "ReplayError",
+    "ReplayedRun",
     "RunResult",
-    "TASK_PLAN_SCHEMA_VERSION",
+    "Store",
     "Task",
     "TaskExecutionRecord",
     "TaskExecutor",
@@ -64,4 +91,5 @@ __all__ = [
     "ToolCall",
     "ToolRegistry",
     "ToolSpec",
+    "replay_run",
 ]

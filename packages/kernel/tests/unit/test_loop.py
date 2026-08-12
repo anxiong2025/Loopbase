@@ -210,3 +210,75 @@ def test_evidence_log_records_every_transition(tmp_path) -> None:
     assert "turn.final" in kinds
     # 每条记录都带 schema 版本
     assert all(r.schema_version == "event/v1" for r in records)
+
+
+def test_every_event_carries_run_identity(tmp_path) -> None:
+    """一次运行写出的所有事件共享 run_id，并标明是哪个组件写的。"""
+    log = JsonlEvidenceLog(tmp_path / "evidence.jsonl", run_id="run_fixed")
+    loop = ReActLoop(client=make_client(), tools=make_registry(), evidence_log=log)
+
+    loop.run(Goal(objective="东京天气怎么样？"))
+
+    records = log.read_all()
+    assert records
+    assert all(record.run_id == "run_fixed" for record in records)
+    assert all(record.actor == "loop" for record in records)
+
+
+def test_two_runs_share_one_file_but_not_one_run_id(tmp_path) -> None:
+    """一个日志文件可以装多次运行，靠 run_id 区分。"""
+    path = tmp_path / "evidence.jsonl"
+    for _ in range(2):
+        loop = ReActLoop(
+            client=make_client(),
+            tools=make_registry(),
+            evidence_log=JsonlEvidenceLog(path),
+        )
+        loop.run(Goal(objective="东京天气怎么样？"))
+
+    run_ids = {record.run_id for record in JsonlEvidenceLog(path).read_all()}
+    assert len(run_ids) == 2
+
+
+def test_causal_chain_links_tool_result_back_to_the_goal(tmp_path) -> None:
+    """只看日志就能把 tool.result 一路追回 goal.start，不需要读代码。"""
+    log = JsonlEvidenceLog(tmp_path / "evidence.jsonl")
+    loop = ReActLoop(client=make_client(), tools=make_registry(), evidence_log=log)
+
+    loop.run(Goal(objective="东京天气怎么样？"))
+
+    records = log.read_all()
+    by_id = {record.id: record for record in records}
+    goal_start = next(r for r in records if r.kind == "goal.start")
+    assert goal_start.caused_by is None  # 根事件
+
+    cursor = next(r for r in records if r.kind == "tool.result")
+    chain = [cursor.kind]
+    while cursor.caused_by is not None:
+        cursor = by_id[cursor.caused_by]
+        chain.append(cursor.kind)
+
+    assert chain == [
+        "tool.result",
+        "tool.call",
+        "model.response",
+        "turn.start",
+        "goal.start",
+    ]
+
+
+def test_read_all_marks_pre_identity_rows_as_unknown(tmp_path) -> None:
+    """加身份字段之前写下的旧日志仍然能读，缺的字段标 unknown 而不是编造。"""
+    path = tmp_path / "old.jsonl"
+    path.write_text(
+        '{"kind": "turn.start", "payload": {"turn": 1}, "timestamp": 1.0,'
+        ' "id": "abc", "schema_version": "event/v1"}\n',
+        encoding="utf-8",
+    )
+
+    (record,) = JsonlEvidenceLog(path).read_all()
+
+    assert record.kind == "turn.start"
+    assert record.run_id == "unknown"
+    assert record.actor == "unknown"
+    assert record.caused_by is None
