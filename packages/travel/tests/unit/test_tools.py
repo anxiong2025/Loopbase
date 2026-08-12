@@ -6,7 +6,7 @@ import json
 
 import pytest
 from loopbase import ToolRegistry
-from travel_agent.providers import open_meteo, wikipedia
+from travel_agent.providers import location_resolver, open_meteo, wikipedia
 from travel_agent.tools import register_all
 from travel_agent.tools.calculate_distance import impl as calculate_distance
 from travel_agent.tools.calculate_trip_budget import impl as calculate_budget
@@ -68,6 +68,43 @@ def test_distance_tool_marks_result_as_straight_line(monkeypatch) -> None:
 
     assert 1900 < result["straight_line_distance_km"] < 2000
     assert "直线距离" in result["notice"]
+
+
+def test_distance_tool_returns_location_candidates_instead_of_raising(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        location_resolver,
+        "open_meteo",
+        type(
+            "Provider",
+            (),
+            {
+                "geocode": staticmethod(
+                    lambda name: (_ for _ in ()).throw(RuntimeError())
+                )
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        location_resolver.wikipedia,
+        "search_locations",
+        lambda name, limit: [
+            {
+                "name": "相似但不确定的地点",
+                "latitude": None,
+                "longitude": None,
+                "url": "https://example.com/candidate",
+            }
+        ],
+    )
+
+    result = json.loads(calculate_distance("完全未知地点", "深圳"))
+
+    assert result["ok"] is False
+    assert result["error_code"] == "location_not_resolved"
+    assert result["field"] == "origin"
+    assert result["candidates"][0]["name"] == "相似但不确定的地点"
 
 
 def test_weather_tool_returns_normalized_daily_forecast(monkeypatch) -> None:
