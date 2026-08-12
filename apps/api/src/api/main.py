@@ -161,14 +161,18 @@ def _build_client() -> OpenAICompatibleClient:
     )
 
 
+def _evidence_path() -> Path:
+    evidence_dir = Path(os.environ.get("LOOPBASE_EVIDENCE_DIR", "/tmp"))
+    return evidence_dir / "evidence_api.jsonl"
+
+
 def _build_evidence_log() -> JsonlEvidenceLog:
     """一次请求一个 run_id。
 
     intake / planner / executor / loop 共用同一个 log，事件才串得成一条链——
     分别 new 一个的话每个组件各写各的 run_id，日志就没法还原一次完整会话了。
     """
-    evidence_dir = Path(os.environ.get("LOOPBASE_EVIDENCE_DIR", "/tmp"))
-    return JsonlEvidenceLog(evidence_dir / "evidence_api.jsonl")
+    return JsonlEvidenceLog(_evidence_path())
 
 
 def _build_loop(
@@ -198,6 +202,18 @@ def index() -> str:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/runs/{run_id}/events")
+def run_events(run_id: str) -> dict:
+    """Return one auditable Agent run for the bundled travel inspector."""
+    records = JsonlEvidenceLog(_evidence_path()).read_run(run_id)
+    if not records:
+        raise HTTPException(status_code=404, detail=f"unknown run_id: {run_id}")
+    return {
+        "run_id": run_id,
+        "events": [record.as_dict() for record in records],
+    }
 
 
 @app.post("/analyze")
@@ -255,7 +271,10 @@ def plan_and_execute(request: PlanAndExecuteRequest) -> dict:
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    response = {"execution": execution.as_dict()}
+    response = {
+        "run_id": evidence_log.run_id,
+        "execution": execution.as_dict(),
+    }
     if request.include_raw_response:
         response["raw_planner_response"] = planning.raw_response_as_dict()
     return response
@@ -274,6 +293,7 @@ def run_prompt(request: PromptRunRequest) -> dict:
         ).intake(request.prompt)
         if intake.status is IntakeStatus.NEEDS_CLARIFICATION:
             response = intake.as_dict()
+            response["run_id"] = evidence_log.run_id
             if request.include_raw_response:
                 response["raw_intake_response"] = intake.raw_response_as_dict()
             return response
@@ -295,6 +315,7 @@ def run_prompt(request: PromptRunRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     response = {
+        "run_id": evidence_log.run_id,
         "status": execution.status.value,
         "intake": intake.as_dict(),
         "execution": execution.as_dict(),

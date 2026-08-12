@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from loopbase import (
@@ -273,6 +274,7 @@ def test_run_endpoint_accepts_one_natural_language_prompt(monkeypatch) -> None:
 
     response = main.run_prompt(request)
 
+    assert response["run_id"]
     assert response["status"] == "completed"
     assert response["intake"]["goal"]["context"]["destination_city"] == "深圳"
     assert response["execution"]["final_answer"] == "深圳三日攻略"
@@ -304,6 +306,7 @@ def test_run_endpoint_returns_clarification_without_planning(monkeypatch) -> Non
 
     response = main.run_prompt(request)
 
+    assert response["run_id"]
     assert response["status"] == "needs_clarification"
     assert response["goal"] is None
     assert response["questions"] == ["你想去哪个城市？"]
@@ -386,3 +389,33 @@ def test_run_endpoint_writes_one_auditable_run_to_the_evidence_log(
     replayed = replay_run(records)
     assert replayed.finished is True
     assert list(replayed.outputs.values()) == ["深圳三日攻略"]
+
+
+def test_run_events_endpoint_filters_one_run(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LOOPBASE_EVIDENCE_DIR", str(tmp_path))
+    path = tmp_path / "evidence_api.jsonl"
+    JsonlEvidenceLog(path, run_id="run_a").append(
+        "intake.start", {"prompt": "北京三日游"}, actor="intake"
+    )
+    JsonlEvidenceLog(path, run_id="run_b").append(
+        "intake.start", {"prompt": "杭州两日游"}, actor="intake"
+    )
+
+    response = main.run_events("run_a")
+
+    assert response["run_id"] == "run_a"
+    assert len(response["events"]) == 1
+    assert response["events"][0]["payload"]["prompt"] == "北京三日游"
+
+    with pytest.raises(HTTPException) as exc_info:
+        main.run_events("missing")
+    assert exc_info.value.status_code == 404
+
+
+def test_bundled_index_is_the_travel_run_inspector() -> None:
+    html = main.index()
+
+    assert "Loopbase · 旅行规划 Agent" in html
+    assert "fetch('/run'" in html
+    assert "/runs/" in html
+    assert "金融分析" not in html
