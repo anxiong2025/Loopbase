@@ -45,8 +45,8 @@ loopbase/
 │   │   │   │   └── anthropic_dialect.py Anthropic 方言
 │   │   │   ├── tools/               层3  工具注册表、并发调度、沙箱边界
 │   │   │   ├── goals.py             层4  目标与任务管理
-│   │   │   ├── context/             层5  装配、预算、压缩、淘汰
-│   │   │   ├── memory/              层6  工作/情景/语义/程序性记忆
+│   │   │   ├── context/             层5  契约、装配、预算、检索、压缩、淘汰、缓存与信任标记
+│   │   │   ├── memory/              层6  工作/情景/语义/程序性记忆、生命周期与冲突消解
 │   │   │   ├── state/               层7  事件日志、检查点、恢复
 │   │   │   ├── runtime.py           层8  配额跟踪、生命周期钩子、resume 入口
 │   │   │   ├── observability.py     层9  审计日志、指标、因果链
