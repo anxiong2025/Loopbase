@@ -77,11 +77,17 @@ class TaskPlanner:
         if not isinstance(goal, Goal):
             raise TypeError("goal must be a Goal")
         start_event = self._log(EventKind.PLAN_START, {"goal": goal.as_dict()})
+        source_text = str(goal.context.get("original_prompt", goal.objective))
+        planning_instruction = (
+            "请为以下目标创建任务计划。任务标题、描述和完成标准必须使用简体中文：\n"
+            if _contains_cjk(source_text)
+            else "Create a task plan for this goal:\n"
+        )
         messages = [
             Message(role="system", content=self._system_prompt()),
             Message(
                 role="user",
-                content="Create a task plan for this goal:\n"
+                content=planning_instruction
                 + json.dumps(goal.model_payload(), ensure_ascii=False, indent=2),
             ),
         ]
@@ -147,11 +153,13 @@ Schema:
 }}
 
 Rules:
+- Write task titles, descriptions, and completion criteria in the same language as the accepted goal and its original user request. Never translate a Chinese goal into English. Local dependency keys may remain short ASCII identifiers.
 - Produce between 1 and {self.max_tasks} executable tasks.
 - Keys must be unique and dependencies must reference keys in this response.
 - Dependencies must be acyclic.
 - Cover the goal's success criteria and constraints.
-- Include a final validation task when the result must satisfy multiple constraints.
+- The last task must synthesize the complete user-facing final answer from prior task outputs. It must not be a validation-only report.
+- When the result must satisfy multiple constraints, combine final validation into that synthesis task and make it depend on every prior result it needs.
 - Do not assign ids, statuses, agents, tools, or invented user requirements.
 - Do not include clarification tasks; this planner receives an already accepted goal.
 """
@@ -259,3 +267,7 @@ def _proposal_text_list(value: Any, field_name: str) -> tuple[str, ...]:
     if len(result) != len(set(result)):
         raise PlanGenerationError(f"{field_name} must not contain duplicates")
     return result
+
+
+def _contains_cjk(value: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in value)

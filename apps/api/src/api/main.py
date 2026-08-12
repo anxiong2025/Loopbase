@@ -139,6 +139,12 @@ class PlanAndExecuteRequest(BaseModel):
 class PromptRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    run_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
     prompt: str = Field(min_length=1)
     max_questions: int = Field(default=3, ge=1, le=5)
     max_tasks: int = Field(default=12, ge=1, le=30)
@@ -166,13 +172,13 @@ def _evidence_path() -> Path:
     return evidence_dir / "evidence_api.jsonl"
 
 
-def _build_evidence_log() -> JsonlEvidenceLog:
+def _build_evidence_log(run_id: str | None = None) -> JsonlEvidenceLog:
     """一次请求一个 run_id。
 
     intake / planner / executor / loop 共用同一个 log，事件才串得成一条链——
     分别 new 一个的话每个组件各写各的 run_id，日志就没法还原一次完整会话了。
     """
-    return JsonlEvidenceLog(_evidence_path())
+    return JsonlEvidenceLog(_evidence_path(), run_id=run_id)
 
 
 def _build_loop(
@@ -283,7 +289,7 @@ def plan_and_execute(request: PlanAndExecuteRequest) -> dict:
 @app.post("/run")
 def run_prompt(request: PromptRunRequest) -> dict:
     """一句自然语言完成目标整理、任务规划和串行执行。"""
-    evidence_log = _build_evidence_log()
+    evidence_log = _build_evidence_log(request.run_id)
     try:
         client = _build_client()
         intake = GoalIntake(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -19,10 +19,12 @@ from loopbase import (
 @dataclass
 class IntakeClient:
     content: str
+    calls: list[list[Message]] = field(default_factory=list)
 
     def complete(self, messages, tools):
         assert tools == []
         assert messages[-1].role == "user"
+        self.calls.append(messages)
         return ModelResponse(
             message=Message(role="assistant", content=self.content),
             finish_reason="stop",
@@ -49,9 +51,8 @@ def _proposal(**overrides) -> dict:
 
 def test_intake_builds_a_goal_from_one_travel_prompt() -> None:
     prompt = "深圳旅行攻略3天2夜，预算5000"
-    intake = GoalIntake(
-        client=IntakeClient(json.dumps(_proposal(), ensure_ascii=False))
-    )
+    client = IntakeClient(json.dumps(_proposal(), ensure_ascii=False))
+    intake = GoalIntake(client=client)
 
     result = intake.intake(prompt)
 
@@ -61,6 +62,7 @@ def test_intake_builds_a_goal_from_one_travel_prompt() -> None:
     assert result.goal.constraints == ("总预算不超过5000元",)
     assert result.goal.context["destination_city"] == "深圳"
     assert result.goal.context["original_prompt"] == prompt
+    assert "必须使用简体中文" in client.calls[0][-1].content
 
 
 def test_intake_returns_questions_when_destination_is_missing() -> None:

@@ -79,6 +79,7 @@ def test_planner_turns_model_keys_into_runtime_owned_task_ids() -> None:
     assert plan.tasks[1].depends_on == (plan.tasks[0].id,)
     assert plan.tasks[2].depends_on == (plan.tasks[1].id,)
     assert client.calls[0][1] == []
+    assert "必须使用简体中文" in client.calls[0][0][-1].content
 
 
 def test_planner_can_return_the_unprocessed_model_response() -> None:

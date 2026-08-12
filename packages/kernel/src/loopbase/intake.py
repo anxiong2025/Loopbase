@@ -85,7 +85,12 @@ class GoalIntake:
             Message(role="system", content=self._system_prompt()),
             Message(
                 role="user",
-                content="Convert this user request into a goal draft:\n" + user_prompt,
+                content=(
+                    "请把以下用户请求整理成目标草稿。所有面向用户的文字必须使用简体中文：\n"
+                    if _contains_cjk(user_prompt)
+                    else "Convert this user request into a goal draft:\n"
+                )
+                + user_prompt,
             ),
         ]
         try:
@@ -162,6 +167,7 @@ Schema:
 }}
 
 Rules:
+- Write every user-facing string (objective, success criteria, constraints, and questions) in the same language as the user's request. Never translate a Chinese request into English.
 - Preserve every explicit fact from the user, especially destination, origin, dates, duration, nights, people, budget, and preferences.
 - Never invent a destination, origin, date, budget, number of people, transport price, or hotel price.
 - Infer useful output criteria, such as daily itinerary and budget breakdown, but do not turn inferred preferences into hard constraints.
@@ -253,3 +259,7 @@ def _text_list(value: Any, field_name: str) -> tuple[str, ...]:
     if len(result) != len(set(result)):
         raise IntakeGenerationError(f"{field_name} must not contain duplicates")
     return result
+
+
+def _contains_cjk(value: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in value)

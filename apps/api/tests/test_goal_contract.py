@@ -391,6 +391,67 @@ def test_run_endpoint_writes_one_auditable_run_to_the_evidence_log(
     assert list(replayed.outputs.values()) == ["深圳三日攻略"]
 
 
+def test_run_endpoint_uses_client_run_id_for_live_event_polling(
+    monkeypatch, tmp_path
+) -> None:
+    class Client:
+        calls = 0
+
+        def complete(self, messages, tools):
+            self.calls += 1
+            content = (
+                {
+                    "objective": "制定杭州周末旅行攻略",
+                    "success_criteria": ["给出每日安排"],
+                    "constraints": [],
+                    "context": {"destination_city": "杭州", "days": 2},
+                    "missing_information": [],
+                    "questions": [],
+                }
+                if self.calls == 1
+                else {
+                    "tasks": [
+                        {
+                            "key": "guide",
+                            "title": "制定旅行攻略",
+                            "description": "制定杭州周末安排",
+                            "depends_on": [],
+                            "completion_criteria": ["输出每日行程"],
+                        }
+                    ]
+                }
+            )
+            return ModelResponse(
+                message=Message(
+                    role="assistant",
+                    content=json.dumps(content, ensure_ascii=False),
+                ),
+                finish_reason="stop",
+            )
+
+    class Runner:
+        def run(self, goal: Goal, *, caused_by: str | None = None) -> RunResult:
+            return RunResult(
+                final_answer="杭州周末攻略",
+                turns=1,
+                goal=goal,
+                stopped_by="model",
+            )
+
+    monkeypatch.setenv("LOOPBASE_EVIDENCE_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "_build_client", lambda: Client())
+    monkeypatch.setattr(main, "_build_loop", lambda max_turns, **kwargs: Runner())
+
+    response = main.run_prompt(
+        PromptRunRequest.model_validate(
+            {"run_id": "web_run_123", "prompt": "规划杭州周末旅行"}
+        )
+    )
+
+    assert response["run_id"] == "web_run_123"
+    assert main.run_events("web_run_123")["events"][0]["kind"] == "intake.start"
+
+
 def test_run_events_endpoint_filters_one_run(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("LOOPBASE_EVIDENCE_DIR", str(tmp_path))
     path = tmp_path / "evidence_api.jsonl"
@@ -418,4 +479,9 @@ def test_bundled_index_is_the_travel_run_inspector() -> None:
     assert "Loopbase · 旅行规划 Agent" in html
     assert "fetch('/run'" in html
     assert "/runs/" in html
+    assert "run_id: runId" in html
+    assert "drawTaskRoute" in html
+    assert "task-route" in html
+    assert "renderGuide" in html
+    assert '<h2 class="section-title">攻略</h2>' in html
     assert "金融分析" not in html
